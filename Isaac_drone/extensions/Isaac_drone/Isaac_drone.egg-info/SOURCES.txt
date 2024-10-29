@@ -15,6 +15,8 @@ Isaac_drone/tasks/Isaac_drone/quadcopter_env_cfg.py
 Isaac_drone/tasks/Isaac_drone/agents/__init__.py
 Isaac_drone/tasks/Isaac_drone/agents/rsl_rl_ppo_cfg.py
 Isaac_drone/tasks/Isaac_drone_v1/__init__.py
-Isaac_drone/tasks/Isaac_drone_v1/po_quadcopter_env.py
+Isaac_drone/tasks/Isaac_drone_v1/basic_terrain.py
+Isaac_drone/tasks/Isaac_drone_v1/complex_terrain.py
+Isaac_drone/tasks/Isaac_drone_v1/lidar_quadcopter.py
 Isaac_drone/tasks/Isaac_drone_v1/agents/__init__.py
 Isaac_drone/tasks/Isaac_drone_v1/agents/rsl_rl_ppo_cfg.py

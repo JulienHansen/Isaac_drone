@@ -1,0 +1,34 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.12.21
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    python_version: 3.10.15
+    start_time: 1730196886
+    t:
+      1:
+      - 55
+      2:
+      - 55
+      3:
+      - 2
+      - 16
+      4: 3.10.15
+      5: 0.12.21
+      8:
+      - 5
+architecture:
+  desc: null
+  value: CNN
+dataset:
+  desc: null
+  value: CIFAR-100
+epochs:
+  desc: null
+  value: 10
+learning_rate:
+  desc: null
+  value: 0.02

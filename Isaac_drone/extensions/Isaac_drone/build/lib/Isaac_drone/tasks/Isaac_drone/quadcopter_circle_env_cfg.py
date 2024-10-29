@@ -55,6 +55,7 @@ class QuadcopterEnvCfg(DirectRLEnvCfg):
         debug_vis=False,
     )
 
+
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
 
     robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")

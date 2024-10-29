@@ -19,8 +19,8 @@ INSTALL_REQUIRES = [
 # Installation operation
 setup(
     name="Isaac_drone",
-    packages=["Isaac_drone"],
-    #packages=find_packages(include=["Isaac_drone", "Isaac_drone.*"]),  # Include sub-packages
+    #packages=["Isaac_drone"],
+    packages=find_packages(include=["Isaac_drone", "Isaac_drone.*"]),  # Include sub-packages
     author=EXTENSION_TOML_DATA["package"]["author"],
     maintainer=EXTENSION_TOML_DATA["package"]["maintainer"],
     url=EXTENSION_TOML_DATA["package"]["repository"],

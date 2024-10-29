@@ -52,7 +52,7 @@ class QuadcopterScene(InteractiveSceneCfg):
         debug_vis=False,
     )
     # Robot with sensor
-    robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot", init_state=ArticulationCfg.InitialStateCfg(pos=(-4,-4,2))) 
+    robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot", init_state=ArticulationCfg.InitialStateCfg(pos=(1,1,1))) 
     camera: TiledCameraCfg = TiledCameraCfg(
         prim_path="{ENV_REGEX_NS}/Robot/body/Cam",  # Adjusted to a relative path within the drone's prim
         offset=CameraCfg.OffsetCfg(pos=(0.510, 0.0, 0.015), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"),
@@ -72,9 +72,9 @@ class QuadcopterScene(InteractiveSceneCfg):
 
 
 @configclass 
-class QuadcopterEnvCfg(DirectRLEnvCfg):
+class CustomQuadcopterEnvCfg(DirectRLEnvCfg):
     decimation = 2
-    episode_length_s = 100.0
+    episode_length_s = 10.0
     action_scale = 100.0
     num_states = 0
     debug_vis = True
@@ -101,19 +101,15 @@ class QuadcopterEnvCfg(DirectRLEnvCfg):
 
     thrust_to_weight = 1.9
     moment_scale = 0.01
+    lin_vel_reward_scale =  -0.05
+    ang_vel_reward_scale = -0.01
     distance_to_goal_reward_scale = 15.0
-    smoothness_penalty_scale = 0.1          # Moderate penalty for abrupt orientation changes
-    time_penalty_scale = 0.01               # Small penalty for longer completion times
-    lin_vel_reward_scale = -0.1             # Reward for maintaining reasonable linear speed
-    ang_vel_reward_scale = -0.05            # Encouragement for smooth and gradual turns
-    #distance_to_goal_reward_scale = 1.0    # Reward for proximity to the goal
-    exponential_decay_factor = 0.5          # Factor for exponential decay in distance reward
 
 
-class QuadcopterEnv(DirectRLEnv):
+class CustomQuadcopterEnv(DirectRLEnv):
 
-    cfg: QuadcopterEnvCfg
-    def __init__(self, cfg: QuadcopterEnvCfg, render_mode: str | None = None, **kwargs):
+    cfg: CustomQuadcopterEnvCfg
+    def __init__(self, cfg: CustomQuadcopterEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
 
         self._robot = self.scene["robot"]
@@ -126,7 +122,7 @@ class QuadcopterEnv(DirectRLEnv):
         self._moment = torch.zeros(self.num_envs, 1, 3, device=self.device)
         # Goal position
         self._desired_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
-        self.current_time = 0
+
         # Logging
         self._episode_sums = {
             key: torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
@@ -156,7 +152,7 @@ class QuadcopterEnv(DirectRLEnv):
         cam_images = self.scene["camera"].data.output["rgb"][..., :3]
         desired_pos_b, _ = subtract_frame_transforms(
             self._robot.data.root_state_w[:, :3], self._robot.data.root_state_w[:, 3:7], self._desired_pos_w
-        ) #desired position relative to the quadcopters body frame
+        )
 
         state = torch.cat([
             self._robot.data.root_lin_vel_b,        # 2D tensor: [batch_size, num_features]
@@ -169,8 +165,6 @@ class QuadcopterEnv(DirectRLEnv):
             "policy": state,
             "Camera": cam_images
         }
-
-
 
     def _get_rewards(self) -> torch.Tensor:
         lin_vel = torch.sum(torch.square(self._robot.data.root_lin_vel_b), dim=1)
@@ -187,8 +181,6 @@ class QuadcopterEnv(DirectRLEnv):
         for key, value in rewards.items():
             self._episode_sums[key] += value
         return reward
-
-
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         time_out = self.episode_length_buf >= self.max_episode_length - 1
@@ -225,16 +217,13 @@ class QuadcopterEnv(DirectRLEnv):
         self._actions[env_ids] = 0.0
         # Sample new commands
         self._desired_pos_w[env_ids, :2] = torch.zeros_like(self._desired_pos_w[env_ids, :2]).uniform_(-2.0, 2.0)
-        #self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
+        self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
         self._desired_pos_w[env_ids, 2] = torch.zeros_like(self._desired_pos_w[env_ids, 2]).uniform_(1, 3)
-
         # Reset robot state
         joint_pos = self._robot.data.default_joint_pos[env_ids]
         joint_vel = self._robot.data.default_joint_vel[env_ids]
         default_root_state = self._robot.data.default_root_state[env_ids]
-
         default_root_state[:, :3] += self._terrain.env_origins[env_ids]
-
         self._robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
         self._robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
         self._robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
@@ -257,8 +246,6 @@ class QuadcopterEnv(DirectRLEnv):
     def _debug_vis_callback(self, event):
         # update the markers
         self.goal_pos_visualizer.visualize(self._desired_pos_w)
-
-
 
 
 

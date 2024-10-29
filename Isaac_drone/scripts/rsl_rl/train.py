@@ -110,7 +110,7 @@ def main():
     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=False)
 
     # Save the trained model after training completes
-    model_save_path = os.path.join(logs, "trained_model.pth")
+    model_save_path = os.path.join("logs", "trained_model.pth")
     print(f"[INFO]: Saving the trained model to: {model_save_path}")
     runner.save(model_save_path)
     # close the simulator
