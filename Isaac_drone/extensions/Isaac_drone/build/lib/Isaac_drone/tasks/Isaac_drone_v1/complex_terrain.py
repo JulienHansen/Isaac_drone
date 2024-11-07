@@ -9,7 +9,6 @@ from omni.isaac.lab.envs.ui import BaseEnvWindow
 from omni.isaac.lab.markers import VisualizationMarkers
 from omni.isaac.lab.scene import InteractiveSceneCfg
 from omni.isaac.lab.sim import SimulationCfg
-from omni.isaac.lab.terrains import TerrainImporterCfg
 from omni.isaac.lab.utils import configclass
 from omni.isaac.lab.utils.math import subtract_frame_transforms
 from omni.isaac.lab.sensors import (Camera,CameraCfg,RayCaster,RayCasterCfg,TiledCamera,TiledCameraCfg,patterns,RayCasterCamera,RayCasterCameraCfg)
@@ -81,7 +80,7 @@ class CustomQuadcopterEnvCfg(DirectRLEnvCfg):
     action_space = 4
      
     # Scene
-    scene: InteractiveSceneCfg = QuadcopterScene(num_envs=4096, env_spacing=15.0)
+    scene: InteractiveSceneCfg = QuadcopterScene(num_envs=7000, env_spacing=15.0)
 
     sim: SimulationCfg = SimulationCfg(
         dt=1 / 100,

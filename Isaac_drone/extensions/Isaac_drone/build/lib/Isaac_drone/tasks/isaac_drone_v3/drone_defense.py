@@ -1,14 +1,16 @@
+
 from __future__ import annotations
 
 import torch
 
 import omni.isaac.lab.sim as sim_utils
 from omni.isaac.lab.assets import Articulation, ArticulationCfg, AssetBaseCfg
-from omni.isaac.lab.envs import DirectRLEnv, DirectRLEnvCfg
+from omni.isaac.lab.envs import DirectMARLEnv, DirectMARLEnvCfg
 from omni.isaac.lab.envs.ui import BaseEnvWindow
 from omni.isaac.lab.markers import VisualizationMarkers
 from omni.isaac.lab.scene import InteractiveSceneCfg
 from omni.isaac.lab.sim import SimulationCfg
+from omni.isaac.lab.terrains import TerrainImporterCfg
 from omni.isaac.lab.utils import configclass
 from omni.isaac.lab.utils.math import subtract_frame_transforms
 from omni.isaac.lab.sensors import (Camera,CameraCfg,RayCaster,RayCasterCfg,TiledCamera,TiledCameraCfg,patterns,RayCasterCamera,RayCasterCameraCfg)
@@ -21,66 +23,36 @@ class QuadcopterScene(InteractiveSceneCfg):
     # Terrain
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
-        terrain_type="generator",
-        terrain_generator=TerrainGeneratorCfg(
-            seed=0,
-            size=(8.0, 8.0),
-            border_width=20.0,
-            num_rows=5,
-            num_cols=5,
-            horizontal_scale=0.1,
-            vertical_scale=0.005,
-            slope_threshold=0.75,
-            use_cache=False,
-            sub_terrains={
-                "obstacles": HfDiscreteObstaclesTerrainCfg(
-                    size=(8.0, 8.0),
-                    horizontal_scale=0.1,
-                    vertical_scale=0.1,
-                    border_width=0.0,
-                    num_obstacles=40,
-                    obstacle_height_mode="choice",
-                    obstacle_width_range=(0.4, 0.8),
-                    obstacle_height_range=(3.0, 4.0),
-                    platform_width=1.5,
-                )
-            },
-        ),
-        max_init_terrain_level=5,
+        terrain_type="plane",
         collision_group=-1,
+        physics_material=sim_utils.RigidBodyMaterialCfg(
+            friction_combine_mode="multiply",
+            restitution_combine_mode="multiply",
+            static_friction=1.0,
+            dynamic_friction=1.0,
+            restitution=0.0,
+        ),
         debug_vis=False,
     )
-    # Robot with sensor
+    # Robot
     robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot", init_state=ArticulationCfg.InitialStateCfg(pos=(1,1,1))) 
-    camera: TiledCameraCfg = TiledCameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/body/Cam",  # Adjusted to a relative path within the drone's prim
-        offset=CameraCfg.OffsetCfg(pos=(0.510, 0.0, 0.015), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"),
-        data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(
-            focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 20.0)
-        ),  
-        width=80,
-        height=80,
-    )
     # lights
     dome_light = AssetBaseCfg(
         prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
     )
 
-
-
-
-@configclass 
-class CustomQuadcopterEnvCfg(DirectRLEnvCfg):
+@configclass
+class DefenseEnvCfg(DirectMARLEnvCfg):
     decimation = 2
-    episode_length_s = 15.0
+    episode_length_s = 10.0
     action_scale = 100.0
     num_states = 0
     debug_vis = True
-    action_space = 4
-     
-    # Scene
-    scene: InteractiveSceneCfg = QuadcopterScene(num_envs=7000, env_spacing=15.0)
+    action_spaces = 4
+    state_space = 100
+    
+    # Correct initialization of scene: Ensure it’s properly set
+    scene: InteractiveSceneCfg = QuadcopterScene(num_envs=4096, env_spacing=15.0)
 
     sim: SimulationCfg = SimulationCfg(
         dt=1 / 100,
@@ -95,20 +67,24 @@ class CustomQuadcopterEnvCfg(DirectRLEnvCfg):
         ),
     )
 
-    num_channels = 3
-    observation_space = num_channels * scene.camera.height * scene.camera.width
-
+    # Ensure observation_spaces is properly initialized as a dict for each agent
+    observation_spaces = {i: 12 for i in range(2)}  # Replace 2 with the actual number of agents
+    possible_agents = [i for i in range(2)]  # Replace 2 with the actual number of agents
+    
     thrust_to_weight = 1.9
     moment_scale = 0.01
-    lin_vel_reward_scale =  -0.05
+    lin_vel_reward_scale = -0.05
     ang_vel_reward_scale = -0.01
     distance_to_goal_reward_scale = 15.0
 
 
-class CustomQuadcopterEnv(DirectRLEnv):
 
-    cfg: CustomQuadcopterEnvCfg
-    def __init__(self, cfg: CustomQuadcopterEnvCfg, render_mode: str | None = None, **kwargs):
+
+
+class DefenseEnv(DirectMARLEnv):
+
+    cfg: DefenseEnvCfg
+    def __init__(self, cfg: DefenseEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
 
         self._robot = self.scene["robot"]
@@ -148,7 +124,6 @@ class CustomQuadcopterEnv(DirectRLEnv):
         self._robot.set_external_force_and_torque(self._thrust, self._moment, body_ids=self._body_id)
 
     def _get_observations(self) -> dict:
-        cam_images = self.scene["camera"].data.output["rgb"][..., :3]
         desired_pos_b, _ = subtract_frame_transforms(
             self._robot.data.root_state_w[:, :3], self._robot.data.root_state_w[:, 3:7], self._desired_pos_w
         )
@@ -162,14 +137,13 @@ class CustomQuadcopterEnv(DirectRLEnv):
 
         return {
             "policy": state,
-            "Camera": cam_images
         }
 
     def _get_rewards(self) -> torch.Tensor:
         lin_vel = torch.sum(torch.square(self._robot.data.root_lin_vel_b), dim=1)
         ang_vel = torch.sum(torch.square(self._robot.data.root_ang_vel_b), dim=1)
         distance_to_goal = torch.linalg.norm(self._desired_pos_w - self._robot.data.root_pos_w, dim=1)
-        distance_to_goal_mapped = 7*(1 - torch.tanh(distance_to_goal / 20)) + 0.3
+        distance_to_goal_mapped = 3* (1 - torch.tanh(distance_to_goal / 20))
         rewards = {
             "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * self.step_dt,
             "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * self.step_dt,
@@ -183,7 +157,7 @@ class CustomQuadcopterEnv(DirectRLEnv):
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         time_out = self.episode_length_buf >= self.max_episode_length - 1
-        died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.1, self._robot.data.root_pos_w[:, 2] > 6.0)
+        died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.1, self._robot.data.root_pos_w[:, 2] > 10.0)
         return died, time_out
 
     def _reset_idx(self, env_ids: torch.Tensor | None):
@@ -215,16 +189,18 @@ class CustomQuadcopterEnv(DirectRLEnv):
 
         self._actions[env_ids] = 0.0
         # Sample new commands
-        self._desired_pos_w[env_ids, 0] = torch.zeros_like(self._desired_pos_w[env_ids, 0]).uniform_(19, 21)
-        self._desired_pos_w[env_ids, 1] = torch.zeros_like(self._desired_pos_w[env_ids, 1]).uniform_(-1, 1)
-        self._desired_pos_w[env_ids, 2] = 3.0
+
+        self._desired_pos_w[env_ids, 0] = 20
+        self._desired_pos_w[env_ids, 1] = 0
+        self._desired_pos_w[env_ids, 2] = 4.0
+
         # Reset robot state
         joint_pos = self._robot.data.default_joint_pos[env_ids]
         joint_vel = self._robot.data.default_joint_vel[env_ids]
         default_root_state = self._robot.data.default_root_state[env_ids]
-        default_root_state[:, 0] = -20
-        default_root_state[:, 1] = torch.zeros_like(default_root_state[:, 1]).uniform_(-10, 10)
-        default_root_state[:, 2] = 3 
+        default_root_state[:, 0] = 0
+        default_root_state[:, 1] = 0
+        default_root_state[:, 2] = 4 
         self._robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
         self._robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
         self._robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
@@ -247,12 +223,3 @@ class CustomQuadcopterEnv(DirectRLEnv):
     def _debug_vis_callback(self, event):
         # update the markers
         self.goal_pos_visualizer.visualize(self._desired_pos_w)
-
-
-
-
-
-
-
-
-

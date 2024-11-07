@@ -10,7 +10,7 @@ Keywords: extension,template,isaaclab
 Classifier: Natural Language :: English
 Classifier: Programming Language :: Python :: 3.10
 Classifier: Isaac Sim :: 2023.1.1
-Classifier: Isaac Sim :: 4.0.0
+Classifier: Isaac Sim :: 4.2.0.2
 Requires-Python: >=3.10
 Requires-Dist: psutil
 Requires-Dist: toml

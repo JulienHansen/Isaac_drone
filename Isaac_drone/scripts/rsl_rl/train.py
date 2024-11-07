@@ -40,7 +40,13 @@ from rsl_rl.runners import OnPolicyRunner
 # Import extensions to set up environment tasks
 from Isaac_drone import tasks # noqa: F401
 
-from omni.isaac.lab.envs import DirectRLEnv
+from omni.isaac.lab.envs import (
+    DirectMARLEnv,
+    DirectMARLEnvCfg,
+    DirectRLEnvCfg,
+    ManagerBasedRLEnvCfg,
+    multi_agent_to_single_agent,
+)
 from omni.isaac.lab.utils.dict import print_dict
 from omni.isaac.lab.utils.io import dump_pickle, dump_yaml
 from omni.isaac.lab_tasks.utils import get_checkpoint_path, parse_env_cfg
@@ -55,7 +61,7 @@ torch.backends.cudnn.benchmark = False
 def main():
     """Train with RSL-RL agent."""
     # parse configuration
-    env_cfg: DirectRLEnv = parse_env_cfg(args_cli.task, num_envs=args_cli.num_envs)
+    env_cfg: DirectRLEnvCfg = parse_env_cfg(args_cli.task, num_envs=args_cli.num_envs)
     agent_cfg: RslRlOnPolicyRunnerCfg = cli_args.parse_rsl_rl_cfg(args_cli.task, args_cli)
 
     # specify directory for logging experiments

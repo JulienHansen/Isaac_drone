@@ -17,9 +17,6 @@ from omni.isaac.lab_assets import CRAZYFLIE_CFG
 from omni.isaac.lab.markers import CUBOID_MARKER_CFG 
 from omni.isaac.lab.terrains import TerrainImporterCfg, TerrainGeneratorCfg, HfDiscreteObstaclesTerrainCfg, TerrainImporter
 
-
-# Modify the QuadcopterScene class to use RayCaster instead of TiledCamera
-
 @configclass
 class QuadcopterScene(InteractiveSceneCfg):
     # Terrain
@@ -56,18 +53,17 @@ class QuadcopterScene(InteractiveSceneCfg):
     )
     # Robot with sensor
     robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot", init_state=ArticulationCfg.InitialStateCfg(pos=(1,1,1))) 
-    # Ray caster configuration for drone
-    lidar_vfov = (-10.0, 20.0)  # Hardcoded vertical field of view range
-    height_scanner = RayCasterCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/body",
-        update_period=0.02,
-        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
-        attach_yaw_only=True,
-        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
-        debug_vis=True,
-        mesh_prim_paths="/World/defaultGroundPlane",
+    camera: TiledCameraCfg = TiledCameraCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/body/Cam", 
+        offset=CameraCfg.OffsetCfg(pos=(0.510, 0.0, 0.015), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"),
+        data_types=["distance_to_image_plane"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 20.0)
+        ),  
+        width=80,
+        height=80,
     )
-    # Lights
+    # lights
     dome_light = AssetBaseCfg(
         prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
     )
@@ -75,18 +71,17 @@ class QuadcopterScene(InteractiveSceneCfg):
 
 
 
-
 @configclass 
 class LidarQuadcopterEnvCfg(DirectRLEnvCfg):
     decimation = 2
-    episode_length_s = 10.0
+    episode_length_s = 15.0
     action_scale = 100.0
     num_states = 0
     debug_vis = True
     action_space = 4
      
     # Scene
-    scene: InteractiveSceneCfg = QuadcopterScene(num_envs=4096, env_spacing=15.0)
+    scene: InteractiveSceneCfg = QuadcopterScene(num_envs=7000, env_spacing=15.0)
 
     sim: SimulationCfg = SimulationCfg(
         dt=1 / 100,
@@ -102,13 +97,14 @@ class LidarQuadcopterEnvCfg(DirectRLEnvCfg):
     )
 
     num_channels = 3
-    observation_space = 10
+    observation_space = num_channels * scene.camera.height * scene.camera.width
 
     thrust_to_weight = 1.9
     moment_scale = 0.01
     lin_vel_reward_scale =  -0.05
     ang_vel_reward_scale = -0.01
     distance_to_goal_reward_scale = 15.0
+    obstacle_penalty_scale = -0.01
 
 
 class LidarQuadcopterEnv(DirectRLEnv):
@@ -118,7 +114,7 @@ class LidarQuadcopterEnv(DirectRLEnv):
         super().__init__(cfg, render_mode, **kwargs)
 
         self._robot = self.scene["robot"]
-        self._lidar = self.scene["height_scanner"]
+        self._camera = self.scene["camera"]
         self._terrain = self.scene["terrain"]
 
         # Total thrust and moment applied to the base of the quadcopter
@@ -134,7 +130,7 @@ class LidarQuadcopterEnv(DirectRLEnv):
             for key in [
                 "lin_vel",
                 "ang_vel",
-                "distance_to_goal"
+                "distance_to_goal",
             ]
         }
         # Get specific body indices
@@ -154,33 +150,38 @@ class LidarQuadcopterEnv(DirectRLEnv):
         self._robot.set_external_force_and_torque(self._thrust, self._moment, body_ids=self._body_id)
 
     def _get_observations(self) -> dict:
-        #cam_images = self.scene["camera"].data.output["rgb"][..., :3]
+        cam_images = self.scene["camera"].data.output["distance_to_image_plane"]
+    
         desired_pos_b, _ = subtract_frame_transforms(
             self._robot.data.root_state_w[:, :3], self._robot.data.root_state_w[:, 3:7], self._desired_pos_w
         )
 
         state = torch.cat([
-            self._robot.data.root_lin_vel_b,        # 2D tensor: [batch_size, num_features]
-            self._robot.data.root_ang_vel_b,        # 2D tensor: [batch_size, num_features]
-            self._robot.data.projected_gravity_b,   # 2D tensor: [batch_size, num_features]
+            self._robot.data.root_lin_vel_b,        
+            self._robot.data.root_ang_vel_b,        
+            self._robot.data.projected_gravity_b,   
             desired_pos_b,
+            #TODO: add here the cam_images -> Or more importantly distance to nearest obstacle
         ], dim=-1)
 
         return {
             "policy": state,
-            #"Camera": cam_images
+            "Camera": cam_images
         }
 
     def _get_rewards(self) -> torch.Tensor:
         lin_vel = torch.sum(torch.square(self._robot.data.root_lin_vel_b), dim=1)
         ang_vel = torch.sum(torch.square(self._robot.data.root_ang_vel_b), dim=1)
         distance_to_goal = torch.linalg.norm(self._desired_pos_w - self._robot.data.root_pos_w, dim=1)
-        distance_to_goal_mapped = 1 - torch.tanh(distance_to_goal / 0.8)
+        distance_to_goal_mapped = 7*(1 - torch.tanh(distance_to_goal / 20)) + 0.3
+
         rewards = {
             "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * self.step_dt,
             "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * self.step_dt,
             "distance_to_goal": distance_to_goal_mapped * self.cfg.distance_to_goal_reward_scale * self.step_dt,
+            #TODO: Add obstacle penalty
         }
+
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
         # Logging
         for key, value in rewards.items():
@@ -189,8 +190,20 @@ class LidarQuadcopterEnv(DirectRLEnv):
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         time_out = self.episode_length_buf >= self.max_episode_length - 1
-        died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.1, self._robot.data.root_pos_w[:, 2] > 10.0)
+
+        # Altitude constraints
+        low_altitude = self._robot.data.root_pos_w[:, 2] < 0.1
+        high_altitude = self._robot.data.root_pos_w[:, 2] > 6.0
+
+        # Collision condition 
+        min_distance_to_obstacle = 0.01 #TODO: Tune this value 
+        obstacle_nearby = self.scene["camera"].data.output["distance_to_image_plane"].mean() < min_distance_to_obstacle #TODO: Problem Here
+        print(self.scene["camera"].data.output["distance_to_image_plane"])
+        print(obstacle_nearby)
+
+        died = torch.logical_or(obstacle_nearby, torch.logical_or(high_altitude, low_altitude)) #TODO: Problem always True 
         return died, time_out
+
 
     def _reset_idx(self, env_ids: torch.Tensor | None):
         if env_ids is None or len(env_ids) == self.num_envs:
@@ -221,14 +234,16 @@ class LidarQuadcopterEnv(DirectRLEnv):
 
         self._actions[env_ids] = 0.0
         # Sample new commands
-        self._desired_pos_w[env_ids, :2] = torch.zeros_like(self._desired_pos_w[env_ids, :2]).uniform_(-2.0, 2.0)
-        self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
-        self._desired_pos_w[env_ids, 2] = torch.zeros_like(self._desired_pos_w[env_ids, 2]).uniform_(1, 3)
+        self._desired_pos_w[env_ids, 0] = torch.zeros_like(self._desired_pos_w[env_ids, 0]).uniform_(19, 21)
+        self._desired_pos_w[env_ids, 1] = torch.zeros_like(self._desired_pos_w[env_ids, 1]).uniform_(-1, 1)
+        self._desired_pos_w[env_ids, 2] = 3.0
         # Reset robot state
         joint_pos = self._robot.data.default_joint_pos[env_ids]
         joint_vel = self._robot.data.default_joint_vel[env_ids]
         default_root_state = self._robot.data.default_root_state[env_ids]
-        default_root_state[:, :3] += self._terrain.env_origins[env_ids]
+        default_root_state[:, 0] = -20
+        default_root_state[:, 1] = torch.zeros_like(default_root_state[:, 1]).uniform_(-10, 10)
+        default_root_state[:, 2] = 3 
         self._robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
         self._robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
         self._robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
@@ -251,7 +266,3 @@ class LidarQuadcopterEnv(DirectRLEnv):
     def _debug_vis_callback(self, event):
         # update the markers
         self.goal_pos_visualizer.visualize(self._desired_pos_w)
-
-
-
-

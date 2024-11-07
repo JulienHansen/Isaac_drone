@@ -79,7 +79,7 @@ class QuadcopterEnvCfg(DirectRLEnvCfg):
     )
 
     num_channels = 3
-    observation_space = num_channels * scene.camera.height * scene.camera.width
+    observation_space = num_channels * scene.camera.height * scene.camera.width #TODO: Certainly false need to check that
 
     thrust_to_weight = 1.9
     moment_scale = 0.01
