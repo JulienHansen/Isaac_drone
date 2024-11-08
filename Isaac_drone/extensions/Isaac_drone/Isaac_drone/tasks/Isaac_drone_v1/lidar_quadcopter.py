@@ -196,9 +196,9 @@ class LidarQuadcopterEnv(DirectRLEnv):
         high_altitude = self._robot.data.root_pos_w[:, 2] > 6.0
 
         # Collision condition 
-        min_distance_to_obstacle = 0.01 #TODO: Tune this value 
-        obstacle_nearby = self.scene["camera"].data.output["distance_to_image_plane"].mean() < min_distance_to_obstacle #TODO: Problem Here
-        print(self.scene["camera"].data.output["distance_to_image_plane"])
+        min_distance_to_obstacle = 0.25 #TODO: Tune this value 
+        obstacle_nearby = self.scene["camera"].data.output["distance_to_image_plane"].min() < min_distance_to_obstacle #TODO: Problem Here
+        print(self.scene["camera"].data.output["distance_to_image_plane"].min())
         print(obstacle_nearby)
 
         died = torch.logical_or(obstacle_nearby, torch.logical_or(high_altitude, low_altitude)) #TODO: Problem always True 

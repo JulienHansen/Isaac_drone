@@ -12,7 +12,7 @@ from omni.isaac.lab.sim import SimulationCfg
 from omni.isaac.lab.terrains import TerrainImporterCfg
 from omni.isaac.lab.utils import configclass
 from omni.isaac.lab.utils.math import subtract_frame_transforms
-from omni.isaac.debug_draw import _debug_draw
+
 
 # Pre-defined configs
 from omni.isaac.lab_assets import CRAZYFLIE_CFG  

@@ -1,0 +1,12 @@
+[2024-11-08 09:58:45,878][ogn_registration][INFO] - Looking for Python nodes to register in omni.physx.fabric-106.1.9
+[2024-11-08 09:58:45,878][ogn_registration][INFO] -  -> Registered nodes from module omni.physxfabric at /home/uliege/miniconda3/envs/isaaclab_ju/lib/python3.10/site-packages/isaacsim/extsPhysics/omni.physx.fabric
+[2024-11-08 09:58:45,879][ogn_registration][INFO] - Registering nodes in /home/uliege/miniconda3/envs/isaaclab_ju/lib/python3.10/site-packages/isaacsim/extsPhysics/omni.physx.fabric imported as omni.physxfabric with AutoNode config {}
+[2024-11-08 09:58:45,879][ogn_registration][INFO] - Registering Python Node Types from omni.physxfabric at /home/uliege/miniconda3/envs/isaaclab_ju/lib/python3.10/site-packages/isaacsim/extsPhysics/omni.physx.fabric in omni.physx.fabric
+[2024-11-08 09:58:45,879][ogn_registration][INFO] - ========================================================================================================================
+[2024-11-08 09:58:45,879][ogn_registration][INFO] - No dependency on omni.graph, therefore no nodes to register in omni.physx.fabric
+[2024-11-08 09:58:45,879][ogn_registration][INFO] - ...None found, no registration to do
+[2024-11-08 09:58:45,879][ogn_registration][INFO] - ...Skipping: No OmniGraph presence in the module omni.physxfabric - No nodes in this module, do not remember it
+[2024-11-08 09:58:45,879][ogn_registration][INFO] - Destroying registration record for omni.physx.fabric
+[2024-11-08 09:58:45,879][ogn_registration][INFO] - OGN register omni.physx.fabric-106.1.9 took 606762.000000
+[2024-11-08 09:58:51,792][skrl][INFO] - Environment wrapper: Isaac Lab (single-agent)
+[2024-11-08 09:58:51,793][skrl][INFO] - Seed: 42

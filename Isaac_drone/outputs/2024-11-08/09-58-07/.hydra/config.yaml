@@ -1,0 +1,672 @@
+env:
+  viewer:
+    eye:
+    - 7.5
+    - 7.5
+    - 7.5
+    lookat:
+    - 0.0
+    - 0.0
+    - 0.0
+    cam_prim_path: /OmniverseKit_Persp
+    resolution:
+    - 1280
+    - 720
+    origin_type: world
+    env_index: 0
+    asset_name: null
+  sim:
+    physics_prim_path: /physicsScene
+    device: cuda:0
+    dt: 0.01
+    render_interval: 2
+    gravity:
+    - 0.0
+    - 0.0
+    - -9.81
+    enable_scene_query_support: false
+    use_fabric: true
+    disable_contact_processing: true
+    physx:
+      solver_type: 1
+      min_position_iteration_count: 1
+      max_position_iteration_count: 255
+      min_velocity_iteration_count: 0
+      max_velocity_iteration_count: 255
+      enable_ccd: false
+      enable_stabilization: true
+      enable_enhanced_determinism: false
+      bounce_threshold_velocity: 0.5
+      friction_offset_threshold: 0.04
+      friction_correlation_distance: 0.025
+      gpu_max_rigid_contact_count: 8388608
+      gpu_max_rigid_patch_count: 163840
+      gpu_found_lost_pairs_capacity: 2097152
+      gpu_found_lost_aggregate_pairs_capacity: 33554432
+      gpu_total_aggregate_pairs_capacity: 2097152
+      gpu_collision_stack_size: 67108864
+      gpu_heap_capacity: 67108864
+      gpu_temp_buffer_capacity: 16777216
+      gpu_max_num_partitions: 8
+      gpu_max_soft_body_contacts: 1048576
+      gpu_max_particle_contacts: 1048576
+    physics_material:
+      func: omni.isaac.lab.sim.spawners.materials.physics_materials:spawn_rigid_body_material
+      static_friction: 1.0
+      dynamic_friction: 1.0
+      restitution: 0.0
+      improve_patch_friction: true
+      friction_combine_mode: multiply
+      restitution_combine_mode: multiply
+      compliant_contact_stiffness: 0.0
+      compliant_contact_damping: 0.0
+    render:
+      enable_translucency: false
+      enable_reflections: false
+      enable_global_illumination: false
+      antialiasing_mode: DLSS
+      enable_dlssg: false
+      dlss_mode: 0
+      enable_direct_lighting: true
+      samples_per_pixel: 1
+      enable_shadows: true
+      enable_ambient_occlusion: false
+  ui_window_class_type: omni.isaac.lab.envs.ui.base_env_window:BaseEnvWindow
+  seed: null
+  decimation: 2
+  is_finite_horizon: false
+  episode_length_s: 15.0
+  scene:
+    num_envs: 7000
+    env_spacing: 15.0
+    lazy_sensor_update: true
+    replicate_physics: true
+    terrain:
+      class_type: omni.isaac.lab.terrains.terrain_importer:TerrainImporter
+      collision_group: -1
+      prim_path: /World/ground
+      num_envs: 1
+      terrain_type: plane
+      terrain_generator: null
+      usd_path: null
+      env_spacing: null
+      visual_material:
+        func: omni.isaac.lab.sim.spawners.materials.visual_materials:spawn_preview_surface
+        diffuse_color:
+        - 0.065
+        - 0.0725
+        - 0.08
+        emissive_color:
+        - 0.0
+        - 0.0
+        - 0.0
+        roughness: 0.5
+        metallic: 0.0
+        opacity: 1.0
+      physics_material:
+        func: omni.isaac.lab.sim.spawners.materials.physics_materials:spawn_rigid_body_material
+        static_friction: 1.0
+        dynamic_friction: 1.0
+        restitution: 0.0
+        improve_patch_friction: true
+        friction_combine_mode: multiply
+        restitution_combine_mode: multiply
+        compliant_contact_stiffness: 0.0
+        compliant_contact_damping: 0.0
+      max_init_terrain_level: null
+      debug_vis: false
+    robot_1:
+      class_type: omni.isaac.lab.assets.articulation.articulation:Articulation
+      prim_path: '{ENV_REGEX_NS}/Robot_1'
+      spawn:
+        func: omni.isaac.lab.sim.spawners.from_files.from_files:spawn_from_usd
+        visible: true
+        semantic_tags: null
+        copy_from_source: false
+        mass_props: null
+        deformable_props: null
+        rigid_props:
+          rigid_body_enabled: null
+          kinematic_enabled: null
+          disable_gravity: false
+          linear_damping: null
+          angular_damping: null
+          max_linear_velocity: null
+          max_angular_velocity: null
+          max_depenetration_velocity: 10.0
+          max_contact_impulse: null
+          enable_gyroscopic_forces: true
+          retain_accelerations: null
+          solver_position_iteration_count: null
+          solver_velocity_iteration_count: null
+          sleep_threshold: null
+          stabilization_threshold: null
+        collision_props: null
+        activate_contact_sensors: false
+        scale: null
+        articulation_props:
+          articulation_enabled: null
+          enabled_self_collisions: false
+          solver_position_iteration_count: 4
+          solver_velocity_iteration_count: 0
+          sleep_threshold: 0.005
+          stabilization_threshold: 0.001
+          fix_root_link: null
+        fixed_tendons_props: null
+        joint_drive_props: null
+        visual_material_path: material
+        visual_material: null
+        usd_path: http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.2/Isaac/Robots/Crazyflie/cf2x.usd
+        variants: null
+      init_state:
+        pos:
+        - 1
+        - 1
+        - 1
+        rot:
+        - 1.0
+        - 0.0
+        - 0.0
+        - 0.0
+        lin_vel:
+        - 0.0
+        - 0.0
+        - 0.0
+        ang_vel:
+        - 0.0
+        - 0.0
+        - 0.0
+        joint_pos:
+          .*: 0.0
+        joint_vel:
+          .*: 0.0
+      collision_group: 0
+      debug_vis: false
+      soft_joint_pos_limit_factor: 1.0
+      actuators:
+        dummy:
+          class_type: omni.isaac.lab.actuators.actuator_pd:ImplicitActuator
+          joint_names_expr:
+          - .*
+          effort_limit: null
+          velocity_limit: null
+          stiffness: 0.0
+          damping: 0.0
+          armature: null
+          friction: null
+    robot_2:
+      class_type: omni.isaac.lab.assets.articulation.articulation:Articulation
+      prim_path: '{ENV_REGEX_NS}/Robot_2'
+      spawn:
+        func: omni.isaac.lab.sim.spawners.from_files.from_files:spawn_from_usd
+        visible: true
+        semantic_tags: null
+        copy_from_source: false
+        mass_props: null
+        deformable_props: null
+        rigid_props:
+          rigid_body_enabled: null
+          kinematic_enabled: null
+          disable_gravity: false
+          linear_damping: null
+          angular_damping: null
+          max_linear_velocity: null
+          max_angular_velocity: null
+          max_depenetration_velocity: 10.0
+          max_contact_impulse: null
+          enable_gyroscopic_forces: true
+          retain_accelerations: null
+          solver_position_iteration_count: null
+          solver_velocity_iteration_count: null
+          sleep_threshold: null
+          stabilization_threshold: null
+        collision_props: null
+        activate_contact_sensors: false
+        scale: null
+        articulation_props:
+          articulation_enabled: null
+          enabled_self_collisions: false
+          solver_position_iteration_count: 4
+          solver_velocity_iteration_count: 0
+          sleep_threshold: 0.005
+          stabilization_threshold: 0.001
+          fix_root_link: null
+        fixed_tendons_props: null
+        joint_drive_props: null
+        visual_material_path: material
+        visual_material: null
+        usd_path: http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.2/Isaac/Robots/Crazyflie/cf2x.usd
+        variants: null
+      init_state:
+        pos:
+        - 2
+        - 1
+        - 1
+        rot:
+        - 1.0
+        - 0.0
+        - 0.0
+        - 0.0
+        lin_vel:
+        - 0.0
+        - 0.0
+        - 0.0
+        ang_vel:
+        - 0.0
+        - 0.0
+        - 0.0
+        joint_pos:
+          .*: 0.0
+        joint_vel:
+          .*: 0.0
+      collision_group: 0
+      debug_vis: false
+      soft_joint_pos_limit_factor: 1.0
+      actuators:
+        dummy:
+          class_type: omni.isaac.lab.actuators.actuator_pd:ImplicitActuator
+          joint_names_expr:
+          - .*
+          effort_limit: null
+          velocity_limit: null
+          stiffness: 0.0
+          damping: 0.0
+          armature: null
+          friction: null
+    robot_3:
+      class_type: omni.isaac.lab.assets.articulation.articulation:Articulation
+      prim_path: '{ENV_REGEX_NS}/Robot_3'
+      spawn:
+        func: omni.isaac.lab.sim.spawners.from_files.from_files:spawn_from_usd
+        visible: true
+        semantic_tags: null
+        copy_from_source: false
+        mass_props: null
+        deformable_props: null
+        rigid_props:
+          rigid_body_enabled: null
+          kinematic_enabled: null
+          disable_gravity: false
+          linear_damping: null
+          angular_damping: null
+          max_linear_velocity: null
+          max_angular_velocity: null
+          max_depenetration_velocity: 10.0
+          max_contact_impulse: null
+          enable_gyroscopic_forces: true
+          retain_accelerations: null
+          solver_position_iteration_count: null
+          solver_velocity_iteration_count: null
+          sleep_threshold: null
+          stabilization_threshold: null
+        collision_props: null
+        activate_contact_sensors: false
+        scale: null
+        articulation_props:
+          articulation_enabled: null
+          enabled_self_collisions: false
+          solver_position_iteration_count: 4
+          solver_velocity_iteration_count: 0
+          sleep_threshold: 0.005
+          stabilization_threshold: 0.001
+          fix_root_link: null
+        fixed_tendons_props: null
+        joint_drive_props: null
+        visual_material_path: material
+        visual_material: null
+        usd_path: http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.2/Isaac/Robots/Crazyflie/cf2x.usd
+        variants: null
+      init_state:
+        pos:
+        - 3
+        - 1
+        - 1
+        rot:
+        - 1.0
+        - 0.0
+        - 0.0
+        - 0.0
+        lin_vel:
+        - 0.0
+        - 0.0
+        - 0.0
+        ang_vel:
+        - 0.0
+        - 0.0
+        - 0.0
+        joint_pos:
+          .*: 0.0
+        joint_vel:
+          .*: 0.0
+      collision_group: 0
+      debug_vis: false
+      soft_joint_pos_limit_factor: 1.0
+      actuators:
+        dummy:
+          class_type: omni.isaac.lab.actuators.actuator_pd:ImplicitActuator
+          joint_names_expr:
+          - .*
+          effort_limit: null
+          velocity_limit: null
+          stiffness: 0.0
+          damping: 0.0
+          armature: null
+          friction: null
+    robot_4:
+      class_type: omni.isaac.lab.assets.articulation.articulation:Articulation
+      prim_path: '{ENV_REGEX_NS}/Robot_4'
+      spawn:
+        func: omni.isaac.lab.sim.spawners.from_files.from_files:spawn_from_usd
+        visible: true
+        semantic_tags: null
+        copy_from_source: false
+        mass_props: null
+        deformable_props: null
+        rigid_props:
+          rigid_body_enabled: null
+          kinematic_enabled: null
+          disable_gravity: false
+          linear_damping: null
+          angular_damping: null
+          max_linear_velocity: null
+          max_angular_velocity: null
+          max_depenetration_velocity: 10.0
+          max_contact_impulse: null
+          enable_gyroscopic_forces: true
+          retain_accelerations: null
+          solver_position_iteration_count: null
+          solver_velocity_iteration_count: null
+          sleep_threshold: null
+          stabilization_threshold: null
+        collision_props: null
+        activate_contact_sensors: false
+        scale: null
+        articulation_props:
+          articulation_enabled: null
+          enabled_self_collisions: false
+          solver_position_iteration_count: 4
+          solver_velocity_iteration_count: 0
+          sleep_threshold: 0.005
+          stabilization_threshold: 0.001
+          fix_root_link: null
+        fixed_tendons_props: null
+        joint_drive_props: null
+        visual_material_path: material
+        visual_material: null
+        usd_path: http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.2/Isaac/Robots/Crazyflie/cf2x.usd
+        variants: null
+      init_state:
+        pos:
+        - 4
+        - 1
+        - 1
+        rot:
+        - 1.0
+        - 0.0
+        - 0.0
+        - 0.0
+        lin_vel:
+        - 0.0
+        - 0.0
+        - 0.0
+        ang_vel:
+        - 0.0
+        - 0.0
+        - 0.0
+        joint_pos:
+          .*: 0.0
+        joint_vel:
+          .*: 0.0
+      collision_group: 0
+      debug_vis: false
+      soft_joint_pos_limit_factor: 1.0
+      actuators:
+        dummy:
+          class_type: omni.isaac.lab.actuators.actuator_pd:ImplicitActuator
+          joint_names_expr:
+          - .*
+          effort_limit: null
+          velocity_limit: null
+          stiffness: 0.0
+          damping: 0.0
+          armature: null
+          friction: null
+    robot_5:
+      class_type: omni.isaac.lab.assets.articulation.articulation:Articulation
+      prim_path: '{ENV_REGEX_NS}/Robot_5'
+      spawn:
+        func: omni.isaac.lab.sim.spawners.from_files.from_files:spawn_from_usd
+        visible: true
+        semantic_tags: null
+        copy_from_source: false
+        mass_props: null
+        deformable_props: null
+        rigid_props:
+          rigid_body_enabled: null
+          kinematic_enabled: null
+          disable_gravity: false
+          linear_damping: null
+          angular_damping: null
+          max_linear_velocity: null
+          max_angular_velocity: null
+          max_depenetration_velocity: 10.0
+          max_contact_impulse: null
+          enable_gyroscopic_forces: true
+          retain_accelerations: null
+          solver_position_iteration_count: null
+          solver_velocity_iteration_count: null
+          sleep_threshold: null
+          stabilization_threshold: null
+        collision_props: null
+        activate_contact_sensors: false
+        scale: null
+        articulation_props:
+          articulation_enabled: null
+          enabled_self_collisions: false
+          solver_position_iteration_count: 4
+          solver_velocity_iteration_count: 0
+          sleep_threshold: 0.005
+          stabilization_threshold: 0.001
+          fix_root_link: null
+        fixed_tendons_props: null
+        joint_drive_props: null
+        visual_material_path: material
+        visual_material: null
+        usd_path: http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.2/Isaac/Robots/Crazyflie/cf2x.usd
+        variants: null
+      init_state:
+        pos:
+        - 5
+        - 1
+        - 1
+        rot:
+        - 1.0
+        - 0.0
+        - 0.0
+        - 0.0
+        lin_vel:
+        - 0.0
+        - 0.0
+        - 0.0
+        ang_vel:
+        - 0.0
+        - 0.0
+        - 0.0
+        joint_pos:
+          .*: 0.0
+        joint_vel:
+          .*: 0.0
+      collision_group: 0
+      debug_vis: false
+      soft_joint_pos_limit_factor: 1.0
+      actuators:
+        dummy:
+          class_type: omni.isaac.lab.actuators.actuator_pd:ImplicitActuator
+          joint_names_expr:
+          - .*
+          effort_limit: null
+          velocity_limit: null
+          stiffness: 0.0
+          damping: 0.0
+          armature: null
+          friction: null
+    dome_light:
+      class_type: null
+      prim_path: /World/Light
+      spawn:
+        func: omni.isaac.lab.sim.spawners.lights.lights:spawn_light
+        visible: true
+        semantic_tags: null
+        copy_from_source: true
+        prim_type: DomeLight
+        color:
+        - 0.75
+        - 0.75
+        - 0.75
+        enable_color_temperature: false
+        color_temperature: 6500.0
+        normalize: false
+        exposure: 0.0
+        intensity: 2000.0
+        texture_file: null
+        texture_format: automatic
+        visible_in_primary_ray: true
+      init_state:
+        pos:
+        - 0.0
+        - 0.0
+        - 0.0
+        rot:
+        - 1.0
+        - 0.0
+        - 0.0
+        - 0.0
+      collision_group: 0
+      debug_vis: false
+  events: null
+  observation_spaces:
+    drone_1: '{"type": "gymnasium", "space": "Box", "low": [-Infinity, -Infinity,
+      -Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity,
+      -Infinity, -Infinity, -Infinity], "high": [Infinity, Infinity, Infinity, Infinity,
+      Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity],
+      "shape": [12]}'
+    drone_2: '{"type": "gymnasium", "space": "Box", "low": [-Infinity, -Infinity,
+      -Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity,
+      -Infinity, -Infinity, -Infinity], "high": [Infinity, Infinity, Infinity, Infinity,
+      Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity],
+      "shape": [12]}'
+    drone_3: '{"type": "gymnasium", "space": "Box", "low": [-Infinity, -Infinity,
+      -Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity,
+      -Infinity, -Infinity, -Infinity], "high": [Infinity, Infinity, Infinity, Infinity,
+      Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity],
+      "shape": [12]}'
+    drone_4: '{"type": "gymnasium", "space": "Box", "low": [-Infinity, -Infinity,
+      -Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity,
+      -Infinity, -Infinity, -Infinity], "high": [Infinity, Infinity, Infinity, Infinity,
+      Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity],
+      "shape": [12]}'
+    drone_5: '{"type": "gymnasium", "space": "Box", "low": [-Infinity, -Infinity,
+      -Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity,
+      -Infinity, -Infinity, -Infinity], "high": [Infinity, Infinity, Infinity, Infinity,
+      Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity, Infinity],
+      "shape": [12]}'
+  num_observations: null
+  state_space: '{"type": "python", "space": "Box", "value": -1}'
+  num_states: 0
+  observation_noise_model: null
+  action_spaces:
+    drone_1: '{"type": "gymnasium", "space": "Box", "low": [-1.0, -1.0, -1.0, -1.0],
+      "high": [1.0, 1.0, 1.0, 1.0], "shape": [4]}'
+    drone_2: '{"type": "gymnasium", "space": "Box", "low": [-1.0, -1.0, -1.0, -1.0],
+      "high": [1.0, 1.0, 1.0, 1.0], "shape": [4]}'
+    drone_3: '{"type": "gymnasium", "space": "Box", "low": [-1.0, -1.0, -1.0, -1.0],
+      "high": [1.0, 1.0, 1.0, 1.0], "shape": [4]}'
+    drone_4: '{"type": "gymnasium", "space": "Box", "low": [-1.0, -1.0, -1.0, -1.0],
+      "high": [1.0, 1.0, 1.0, 1.0], "shape": [4]}'
+    drone_5: '{"type": "gymnasium", "space": "Box", "low": [-1.0, -1.0, -1.0, -1.0],
+      "high": [1.0, 1.0, 1.0, 1.0], "shape": [4]}'
+  num_actions: null
+  action_noise_model: null
+  possible_agents:
+  - drone_1
+  - drone_2
+  - drone_3
+  - drone_4
+  - drone_5
+  action_scale: 100.0
+  debug_vis: true
+  thrust_to_weight: 1.9
+  moment_scale: 0.01
+  lin_vel_reward_scale: -0.05
+  ang_vel_reward_scale: -0.01
+  distance_to_goal_reward_scale: 15.0
+  num_channels: 3
+  observation_space: '{"type": "python", "space": "Box", "value": 12}'
+agent:
+  seed: 42
+  models:
+    separate: false
+    policy:
+      class: GaussianMixin
+      clip_actions: false
+      clip_log_std: true
+      min_log_std: -20.0
+      max_log_std: 2.0
+      initial_log_std: 0.0
+      network:
+      - name: net
+        input: STATES
+        layers:
+        - 64
+        - 64
+        activations: elu
+      output: ACTIONS
+    value:
+      class: DeterministicMixin
+      clip_actions: false
+      network:
+      - name: net
+        input: STATES
+        layers:
+        - 64
+        - 64
+        activations: elu
+      output: ONE
+  memory:
+    class: RandomMemory
+    memory_size: -1
+  agent:
+    class: PPO
+    rollouts: 24
+    learning_epochs: 5
+    mini_batches: 4
+    discount_factor: 0.99
+    lambda: 0.95
+    learning_rate: 0.0005
+    learning_rate_scheduler: KLAdaptiveLR
+    learning_rate_scheduler_kwargs:
+      kl_threshold: 0.016
+    state_preprocessor: RunningStandardScaler
+    state_preprocessor_kwargs: null
+    value_preprocessor: RunningStandardScaler
+    value_preprocessor_kwargs: null
+    random_timesteps: 0
+    learning_starts: 0
+    grad_norm_clip: 1.0
+    ratio_clip: 0.2
+    value_clip: 0.2
+    clip_predicted_values: true
+    entropy_loss_scale: 0.0
+    value_loss_scale: 1.0
+    kl_threshold: 0.0
+    rewards_shaper_scale: 0.01
+    time_limit_bootstrap: false
+    experiment:
+      directory: quadcopter_direct
+      experiment_name: ''
+      write_interval: auto
+      checkpoint_interval: auto
+  trainer:
+    class: SequentialTrainer
+    timesteps: 4800
+    environment_info: log

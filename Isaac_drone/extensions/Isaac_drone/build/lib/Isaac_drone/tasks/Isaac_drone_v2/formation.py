@@ -132,17 +132,62 @@ class formationEnv(DirectMARLEnv):
 
         self.set_debug_vis(self.cfg.debug_vis)
 
-    def _pre_physics_step(self, actions: torch.Tensor):
+    def _pre_physics_step(self, actions: dict):
         # Update each drone's thrust and moment based on actions
-        self._actions = actions.clone().clamp(-1.0, 1.0)
-        for i in range(len(self._robots)):
+        for i, agent_id in enumerate(self.cfg.possible_agents):
+            action_tensor = torch.tensor(actions[agent_id], device=self.device)
+            self._actions[:, i, :] = action_tensor.clamp(-1.0, 1.0)
             self._thrust[:, i, 2] = self.cfg.thrust_to_weight * self._robot_weights[i] * (self._actions[:, i, 0] + 1.0) / 2.0
             self._moment[:, i, :] = self.cfg.moment_scale * self._actions[:, i, 1:]
 
+
+
     def _apply_action(self):
-        # Apply the actions to each drone
+        # Iterate over each agent and apply force and torque
         for i, robot in enumerate(self._robots):
-            robot.set_external_force_and_torque(self._thrust[:, i], self._moment[:, i], body_ids=self._body_ids[i])
+            try:
+                # Debug information for each agent
+                print(f"Debug: Applying action for agent {i}")
+                print(f"  Thrust shape: {self._thrust[:, i].shape}")
+                print(f"  Moment shape: {self._moment[:, i].shape}")
+
+
+                # Reshape and expand thrust and moment to match expected shape
+                thrust = self._thrust[:, i].reshape(1000, 3).to(self.device)
+                moment = self._moment[:, i].reshape(1000, 3).to(self.device)
+
+                # Debug to confirm reshaping is as expected
+                print(f"  Reshaped thrust shape: {thrust.shape}")
+                print(f"  Reshaped moment shape: {moment.shape}")
+
+                # Ensure body_ids are on the correct device
+                if len(self._body_ids[i]) == 1:
+                    # Replicate the single body ID to match the thrust's first dimension
+                    body_ids = torch.tensor(self._body_ids[i], device=self.device).repeat(thrust.shape[0])
+                    print(f"  Broadcasted Body IDs shape: {body_ids.shape}")
+                elif len(self._body_ids[i]) == thrust.shape[0]:
+                    body_ids = torch.tensor(self._body_ids[i], device=self.device)  # Use as-is if they match in size
+                else:
+                    raise RuntimeError("Body IDs count does not match thrust count")
+
+                # Apply the action with thrust and moment, matching dimensions for body IDs
+                robot.set_external_force_and_torque(
+                    thrust,
+                    moment,
+                    body_ids=body_ids
+                )
+                print(f"  Applied action successfully for agent {i}")
+
+            except RuntimeError as e:
+                # Print the error message with debug information for further diagnosis
+                print(f"Error applying action for agent {i}: {e}")
+                print(f"Debug info - Thrust: {thrust.shape}, Moment: {moment.shape}, Body IDs: {body_ids.shape}")
+                raise e
+
+
+
+
+
 
     def _get_observations(self) -> dict:
         # Collect observations for each drone
