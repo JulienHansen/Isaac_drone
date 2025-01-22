@@ -17,13 +17,14 @@ from omni.isaac.lab.sim import SimulationCfg
 from omni.isaac.lab.terrains import TerrainImporterCfg
 from omni.isaac.lab.utils import configclass
 from omni.isaac.lab.utils.math import subtract_frame_transforms
-
+import numpy as np
 ##
 # Pre-defined configs
 ##
 from omni.isaac.lab_assets import CRAZYFLIE_CFG  # isort: skip
 from omni.isaac.lab.markers import CUBOID_MARKER_CFG  # isort: skip
-
+import gymnasium as gym
+from gymnasium.spaces import Box, Dict
 
 class QuadcopterEnvWindow(BaseEnvWindow):
     """Window manager for the Quadcopter environment."""
@@ -50,9 +51,9 @@ class QuadcopterEnvCfg(DirectRLEnvCfg):
     # env
     episode_length_s = 10.0
     decimation = 2
-    num_actions = 4
-    num_observations = 12
-    num_states = 0
+    action_space = 4
+    observation_space = 12
+    state_space = 0
     debug_vis = True
 
     ui_window_class_type = QuadcopterEnvWindow
@@ -85,7 +86,7 @@ class QuadcopterEnvCfg(DirectRLEnvCfg):
     )
 
     # scene
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=5000, env_spacing=2.5, replicate_physics=True)
 
     # robot
     robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -105,7 +106,7 @@ class QuadcopterEnv(DirectRLEnv):
         super().__init__(cfg, render_mode, **kwargs)
 
         # Total thrust and moment applied to the base of the quadcopter
-        self._actions = torch.zeros(self.num_envs, self.cfg.num_actions, device=self.device)
+        self._actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
         self._thrust = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self._moment = torch.zeros(self.num_envs, 1, 3, device=self.device)
         # Goal position

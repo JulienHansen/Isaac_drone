@@ -1,7 +1,7 @@
+#python scripts/skrl/train.py --task=Isaac-camera-drone --algorithm PPO  --enable_cameras  --num_envs=100 --ml_framework torch
+
 from __future__ import annotations
-
 import torch
-
 import omni.isaac.lab.sim as sim_utils
 from omni.isaac.lab.assets import Articulation, ArticulationCfg, AssetBaseCfg
 from omni.isaac.lab.envs import DirectRLEnv, DirectRLEnvCfg
@@ -11,32 +11,53 @@ from omni.isaac.lab.scene import InteractiveSceneCfg
 from omni.isaac.lab.sim import SimulationCfg
 from omni.isaac.lab.terrains import TerrainImporterCfg
 from omni.isaac.lab.utils import configclass
+from omni.isaac.lab.actuators import ImplicitActuatorCfg
 from omni.isaac.lab.utils.math import subtract_frame_transforms
-from omni.isaac.lab.sensors import (Camera,CameraCfg,RayCaster,RayCasterCfg,TiledCamera,TiledCameraCfg,patterns,RayCasterCamera,RayCasterCameraCfg)
-from omni.isaac.lab_assets import CRAZYFLIE_CFG 
+from omni.isaac.lab.sensors import (Camera,CameraCfg,RayCaster,RayCasterCfg,TiledCamera,TiledCameraCfg,ContactSensor,ContactSensorCfg)
 from omni.isaac.lab.markers import CUBOID_MARKER_CFG 
 from omni.isaac.lab.terrains import TerrainImporterCfg, TerrainGeneratorCfg, HfDiscreteObstaclesTerrainCfg, TerrainImporter
+from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
+from omni.isaac.lab_assets import CRAZYFLIE_CFG 
+
 
 @configclass
 class QuadcopterScene(InteractiveSceneCfg):
     # Terrain
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
-        terrain_type="plane",
-        collision_group=-1,
-        physics_material=sim_utils.RigidBodyMaterialCfg(
-            friction_combine_mode="multiply",
-            restitution_combine_mode="multiply",
-            static_friction=1.0,
-            dynamic_friction=1.0,
-            restitution=0.0,
+        terrain_type="generator",
+        terrain_generator=TerrainGeneratorCfg(
+            seed=0,
+            size=(8.0, 8.0),
+            border_width=20.0,
+            num_rows=5,
+            num_cols=5,
+            horizontal_scale=0.1,
+            vertical_scale=0.005,
+            slope_threshold=0.75,
+            use_cache=False,
+            sub_terrains={
+                "obstacles": HfDiscreteObstaclesTerrainCfg(
+                    size=(8.0, 8.0),
+                    horizontal_scale=0.1,
+                    vertical_scale=0.1,
+                    border_width=0.0,
+                    num_obstacles=40,
+                    obstacle_height_mode="choice",
+                    obstacle_width_range=(0.4, 0.8),
+                    obstacle_height_range=(3.0, 4.0),
+                    platform_width=1.5,
+                )
+            },
         ),
+        max_init_terrain_level=5,
+        collision_group=-1,
         debug_vis=False,
     )
-    # Robot with sensor
-    robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot", init_state=ArticulationCfg.InitialStateCfg(pos=(1,1,1))) 
+    # Robot with camera sensor for obs and contact sensor for collision detection
+    robot: ArticulationCfg = CRAZYFLIE_CFG.replace( prim_path="{ENV_REGEX_NS}/Robot",init_state=ArticulationCfg.InitialStateCfg(pos=(1,1,1)),)
     camera: TiledCameraCfg = TiledCameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/body/Cam",  # Adjusted to a relative path within the drone's prim
+        prim_path="{ENV_REGEX_NS}/Robot/body/Cam", 
         offset=CameraCfg.OffsetCfg(pos=(0.510, 0.0, 0.015), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"),
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
@@ -50,20 +71,16 @@ class QuadcopterScene(InteractiveSceneCfg):
         prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
     )
 
-
-
-
 @configclass 
-class QuadcopterEnvCfg(DirectRLEnvCfg):
+class CameraQuadcopterEnvCfg(DirectRLEnvCfg):
     decimation = 2
-    episode_length_s = 10.0
+    episode_length_s = 600.0
     action_scale = 100.0
-    num_states = 0
     debug_vis = True
     action_space = 4
-     
+    state_space = 0
     # Scene
-    scene: InteractiveSceneCfg = QuadcopterScene(num_envs=4096, env_spacing=15.0)
+    scene: InteractiveSceneCfg = QuadcopterScene(num_envs=7000, env_spacing=15.0)
 
     sim: SimulationCfg = SimulationCfg(
         dt=1 / 100,
@@ -79,7 +96,10 @@ class QuadcopterEnvCfg(DirectRLEnvCfg):
     )
 
     num_channels = 3
-    observation_space = num_channels * scene.camera.height * scene.camera.width #TODO: Certainly false need to check that
+    observation_space = {
+    "robot-state": 12,
+    "camera": [scene.camera.width, scene.camera.height, num_channels],
+    }
 
     thrust_to_weight = 1.9
     moment_scale = 0.01
@@ -88,20 +108,21 @@ class QuadcopterEnvCfg(DirectRLEnvCfg):
     distance_to_goal_reward_scale = 15.0
 
 
-class QuadcopterEnv(DirectRLEnv):
+class CameraQuadcopterEnv(DirectRLEnv):
 
-    cfg: QuadcopterEnvCfg
-    def __init__(self, cfg: QuadcopterEnvCfg, render_mode: str | None = None, **kwargs):
+    cfg: CameraQuadcopterEnvCfg
+    def __init__(self, cfg: CameraQuadcopterEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
 
         self._robot = self.scene["robot"]
         self._camera = self.scene["camera"]
         self._terrain = self.scene["terrain"]
-
+        
         # Total thrust and moment applied to the base of the quadcopter
         self._actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
         self._thrust = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self._moment = torch.zeros(self.num_envs, 1, 3, device=self.device)
+
         # Goal position
         self._desired_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
 
@@ -111,7 +132,7 @@ class QuadcopterEnv(DirectRLEnv):
             for key in [
                 "lin_vel",
                 "ang_vel",
-                "distance_to_goal"
+                "distance_to_goal",
             ]
         }
         # Get specific body indices
@@ -130,34 +151,41 @@ class QuadcopterEnv(DirectRLEnv):
     def _apply_action(self):
         self._robot.set_external_force_and_torque(self._thrust, self._moment, body_ids=self._body_id)
 
+
     def _get_observations(self) -> dict:
-        cam_images = self.scene["camera"].data.output["rgb"][..., :3]
+        cam_images = self.scene["camera"].data.output["rgb"]
         desired_pos_b, _ = subtract_frame_transforms(
             self._robot.data.root_state_w[:, :3], self._robot.data.root_state_w[:, 3:7], self._desired_pos_w
         )
 
         state = torch.cat([
-            self._robot.data.root_lin_vel_b,        # 2D tensor: [batch_size, num_features]
-            self._robot.data.root_ang_vel_b,        # 2D tensor: [batch_size, num_features]
-            self._robot.data.projected_gravity_b,   # 2D tensor: [batch_size, num_features]
+            self._robot.data.root_lin_vel_b,        
+            self._robot.data.root_ang_vel_b,        
+            self._robot.data.projected_gravity_b,   
             desired_pos_b,
         ], dim=-1)
 
-        return {
-            "policy": state,
-            "Camera": cam_images
+        observation = {
+            "policy": {
+                "robot-state": state,
+                "camera": cam_images,
+            }
         }
+        return observation
 
     def _get_rewards(self) -> torch.Tensor:
         lin_vel = torch.sum(torch.square(self._robot.data.root_lin_vel_b), dim=1)
         ang_vel = torch.sum(torch.square(self._robot.data.root_ang_vel_b), dim=1)
         distance_to_goal = torch.linalg.norm(self._desired_pos_w - self._robot.data.root_pos_w, dim=1)
-        distance_to_goal_mapped = 3* (1 - torch.tanh(distance_to_goal / 20))
+        distance_to_goal_mapped = 7 * (1 - torch.tanh(distance_to_goal / 20)) + 0.3
+        
+        
         rewards = {
             "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * self.step_dt,
             "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * self.step_dt,
             "distance_to_goal": distance_to_goal_mapped * self.cfg.distance_to_goal_reward_scale * self.step_dt,
         }
+
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
         # Logging
         for key, value in rewards.items():
@@ -166,7 +194,21 @@ class QuadcopterEnv(DirectRLEnv):
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         time_out = self.episode_length_buf >= self.max_episode_length - 1
-        died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.1, self._robot.data.root_pos_w[:, 2] > 10.0)
+
+        # Altitude constraints
+        low_altitude = self._robot.data.root_pos_w[:, 2] < 0.1
+        high_altitude = self._robot.data.root_pos_w[:, 2] > 3.5
+        altitude = torch.logical_or(low_altitude, high_altitude)
+
+        # X-Y Plane constraints
+        x_constraint = torch.logical_or(self._robot.data.root_pos_w[:, 0] < -22, self._robot.data.root_pos_w[:, 0] > 22)
+        y_constraint = torch.logical_or(self._robot.data.root_pos_w[:, 1] < -11, self._robot.data.root_pos_w[:, 1] > 11)
+        xy_constraint = torch.logical_or(x_constraint, y_constraint)
+
+        # Domain constraints
+        domain_constraint = torch.logical_or(xy_constraint, altitude)
+
+        died = domain_constraint
         return died, time_out
 
     def _reset_idx(self, env_ids: torch.Tensor | None):
@@ -198,18 +240,16 @@ class QuadcopterEnv(DirectRLEnv):
 
         self._actions[env_ids] = 0.0
         # Sample new commands
-
-        self._desired_pos_w[env_ids, 0] = 20
-        self._desired_pos_w[env_ids, 1] = 0
-        self._desired_pos_w[env_ids, 2] = 4.0
-
+        self._desired_pos_w[env_ids, 0] = torch.zeros_like(self._desired_pos_w[env_ids, 0]).uniform_(19, 21)
+        self._desired_pos_w[env_ids, 1] = torch.zeros_like(self._desired_pos_w[env_ids, 1]).uniform_(-1, 1)
+        self._desired_pos_w[env_ids, 2] = 3.0
         # Reset robot state
         joint_pos = self._robot.data.default_joint_pos[env_ids]
         joint_vel = self._robot.data.default_joint_vel[env_ids]
         default_root_state = self._robot.data.default_root_state[env_ids]
-        default_root_state[:, 0] = 0
-        default_root_state[:, 1] = 0
-        default_root_state[:, 2] = 4 
+        default_root_state[:, 0] = -20
+        default_root_state[:, 1] = torch.zeros_like(default_root_state[:, 1]).uniform_(-10, 10)
+        default_root_state[:, 2] = 2
         self._robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
         self._robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
         self._robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
@@ -232,8 +272,3 @@ class QuadcopterEnv(DirectRLEnv):
     def _debug_vis_callback(self, event):
         # update the markers
         self.goal_pos_visualizer.visualize(self._desired_pos_w)
-
-
-
-
-

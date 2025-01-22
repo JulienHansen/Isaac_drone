@@ -4,7 +4,7 @@ seed: 42
 # Models are instantiated using skrl's model instantiator utility
 # https://skrl.readthedocs.io/en/latest/api/utils/model_instantiators.html
 models:
-  separate: False
+  separate: True
   policy:  # see gaussian_model parameters
     class: GaussianMixin
     clip_actions: False
@@ -15,7 +15,7 @@ models:
     network:
       - name: net
         input: STATES
-        layers: [64, 64]
+        layers: [512, 512, 256, 128]
         activations: elu
     output: ACTIONS
   value:  # see deterministic_model parameters
@@ -24,11 +24,9 @@ models:
     network:
       - name: net
         input: STATES
-        layers: [64, 64]
+        layers: [512, 512, 256, 128]
         activations: elu
     output: ONE
-
-  
 
 
 # Rollout memory
@@ -38,13 +36,13 @@ memory:
   memory_size: -1  # automatically determined (same as agent:rollouts)
 
 
-# PPO agent configuration (field names are from PPO_DEFAULT_CONFIG)
-# https://skrl.readthedocs.io/en/latest/api/agents/ppo.html
+# MAPPO agent configuration (field names are from MAPPO_DEFAULT_CONFIG)
+# https://skrl.readthedocs.io/en/latest/api/multi_agents/mappo.html
 agent:
-  class: PPO
-  rollouts: 24
+  class: MAPPO
+  rollouts: 16
   learning_epochs: 5
-  mini_batches: 4
+  mini_batches: 8
   discount_factor: 0.99
   lambda: 0.95
   learning_rate: 5.0e-04
@@ -53,6 +51,8 @@ agent:
     kl_threshold: 0.016
   state_preprocessor: RunningStandardScaler
   state_preprocessor_kwargs: null
+  shared_state_preprocessor: RunningStandardScaler
+  shared_state_preprocessor_kwargs: null
   value_preprocessor: RunningStandardScaler
   value_preprocessor_kwargs: null
   random_timesteps: 0
@@ -61,10 +61,10 @@ agent:
   ratio_clip: 0.2
   value_clip: 0.2
   clip_predicted_values: True
-  entropy_loss_scale: 0.0001
-  value_loss_scale: 1.0
+  entropy_loss_scale: 0.0
+  value_loss_scale: 2.0
   kl_threshold: 0.0
-  rewards_shaper_scale: 0.01
+  rewards_shaper_scale: 1.0
   time_limit_bootstrap: False
   # logging and checkpoint
   experiment:
@@ -72,12 +72,11 @@ agent:
     experiment_name: ""
     write_interval: auto
     checkpoint_interval: auto
-    wandb: True
 
 
 # Sequential trainer
 # https://skrl.readthedocs.io/en/latest/api/trainers/sequential.html
 trainer:
   class: SequentialTrainer
-  timesteps: 10000
+  timesteps: 36000
   environment_info: log

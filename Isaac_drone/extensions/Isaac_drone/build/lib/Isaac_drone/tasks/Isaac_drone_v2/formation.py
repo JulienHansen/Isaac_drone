@@ -47,21 +47,44 @@ class formationEnvCfg(DirectMARLEnvCfg):
     moment_scale = 0.01
     lin_vel_reward_scale = -0.05
     ang_vel_reward_scale = -0.01
-    distance_to_goal_reward_scale = 15.0
-    num_channels = 3
-    observation_space = 12
+
+
+    possible_agents = ["robot_1", "robot_2", "robot_3", "robot_4", "robot_5"]
+
+    # Define action space for each robot (4 actions each in this case)
     action_spaces = {
-        f"drone_{i+1}": Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
-        for i in range(5)
+        "robot_1": Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32),
+        "robot_2": Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32),
+        "robot_3": Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32),
+        "robot_4": Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32),
+        "robot_5": Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32),
     }
+
+    # Define observation space for each robot (for example, 60-dimensional observations)
     observation_spaces = {
-        f"drone_{i+1}": Box(low=-np.inf, high=np.inf, shape=(12,), dtype=np.float32)
-        for i in range(5)
+        "robot_1": Box(low=-np.inf, high=np.inf, shape=(60,), dtype=np.float32),
+        "robot_2": Box(low=-np.inf, high=np.inf, shape=(60,), dtype=np.float32),
+        "robot_3": Box(low=-np.inf, high=np.inf, shape=(60,), dtype=np.float32),
+        "robot_4": Box(low=-np.inf, high=np.inf, shape=(60,), dtype=np.float32),
+        "robot_5": Box(low=-np.inf, high=np.inf, shape=(60,), dtype=np.float32),
     }
-    state_space = -1
-    possible_agents = [f"drone_{i+1}" for i in range(5)]
+
+    # Overall state space (if required)
+    state_space = 60 * len(possible_agents)  # For example, concatenating each robot's observation
+    
     scene: InteractiveSceneCfg = QuadcopterScene(num_envs=10, env_spacing=15.0)
-    sim: SimulationCfg = SimulationCfg(dt=1 / 100, render_interval=decimation)
+    sim: SimulationCfg = SimulationCfg(
+        dt=1 / 100,
+        render_interval=decimation,
+        disable_contact_processing=True,
+        physics_material=sim_utils.RigidBodyMaterialCfg(
+            friction_combine_mode="multiply",
+            restitution_combine_mode="multiply",
+            static_friction=1.0,
+            dynamic_friction=1.0,
+            restitution=0.0,
+        ),
+    )
     debug_vis = True
 
 
@@ -69,69 +92,66 @@ class formationEnv(DirectMARLEnv):
     cfg: formationEnvCfg
 
     def __init__(self, cfg: formationEnvCfg, render_mode: str | None = None, **kwargs):
-        print("Initializing formationEnv...")
         super().__init__(cfg, render_mode, **kwargs)
-        print(f"Super initialization complete. num_envs: {self.num_envs}")
-        
         self._robots = [self.scene[f"robot_{i+1}"] for i in range(len(self.cfg.possible_agents))]
         self._actions = torch.zeros(self.num_envs, len(self.cfg.possible_agents), 4, device=self.device)
         self._thrust = torch.zeros(self.num_envs, len(self.cfg.possible_agents), 3, device=self.device)
         self._moment = torch.zeros(self.num_envs, len(self.cfg.possible_agents), 3, device=self.device)
         self.set_debug_vis(self.cfg.debug_vis)
-        print(f"Environment initialized with {len(self._robots)} robots.")
-        
-        # Debugging simulation configuration
-        print(f"Simulation configuration: {self.cfg.sim}")
-        print(f"Number of environments: {self.num_envs}")
-        print(f"Maximum episode length: {self.max_episode_length}")
-
-    def _pre_physics_step(self, actions: dict):
-        print(f"Pre-physics step. Actions: {actions}")
-        for i, agent_id in enumerate(self.cfg.possible_agents):
-            action_tensor = torch.tensor(actions[agent_id], device=self.device)
-            self._actions[:, i, :] = action_tensor.clamp(-1.0, 1.0)
-
-    def _apply_action(self):
-        print("Applying actions for all robots.")
-        for i, robot in enumerate(self._robots):
-            print(f"Debug: Applying action for agent {i}")
 
     def _get_observations(self) -> dict:
-        print("Getting observations.")
+        print("obs start")
         observations = {}
         for i, robot in enumerate(self._robots):
-            state = torch.zeros(12, device=self.device)  # Dummy state
-            print(f"Observation for drone_{i+1}: {state.shape}")
-            observations[f"drone_{i+1}"] = state
+            state = torch.zeros(60, device=self.device)  # Dummy state
+            # Check for NaN values in the observation and replace with zeros
+            if torch.any(torch.isnan(state)):
+                print(f"Warning: NaN detected in observation for robot_{i+1}. Replacing with zeros.")
+                state = torch.zeros_like(state)
+            observations[f"robot_{i+1}"] = state
         return observations
 
-    def _get_rewards(self) -> torch.Tensor:
-        print("Calculating rewards.")
-        rewards = torch.zeros(self.num_envs, len(self._robots), device=self.device)
-        print(f"Rewards: {rewards.shape}")
-        return rewards
+    def _get_states(self) -> torch.Tensor:
+        print("state start")
+        states = torch.zeros(self.num_envs, self.cfg.state_space, device=self.device)
+        print(states)
+        return states
 
-    def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
-        print("Checking if episode is done.")
-        time_out = self.episode_length_buf >= self.max_episode_length - 1
-        died = torch.zeros(self.num_envs, len(self._robots), device=self.device)  # No drones die
-        print(f"Died: {died.shape}, Time Out: {time_out.shape}")
-        return died.any(dim=1), time_out
+    def _get_rewards(self) -> dict:
+        print("reward start")
+        rewards = torch.zeros(self.num_envs, len(self._robots), device=self.device)
+        # Check for NaN values in the rewards and replace with zeros
+        if torch.any(torch.isnan(rewards)):
+            print("Warning: NaN detected in rewards. Replacing with zeros.")
+            rewards = torch.zeros_like(rewards)
+        rewards_dict = {
+            f"robot_{i+1}": rewards[:, i]  # Assigning reward for each robot
+            for i in range(len(self._robots))
+        }
+        return rewards_dict
+
+    def _get_dones(self) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+        print("done start")
+        time_out = (self.episode_length_buf >= self.max_episode_length - 1).bool()
+        died = torch.zeros(self.num_envs, len(self._robots), device=self.device, dtype=torch.bool)
+        terminated = {f"robot_{i+1}": died[:, i] for i in range(len(self._robots))}
+        time_outs = {f"robot_{i+1}": time_out for i in range(len(self._robots))}
+        return terminated, time_outs
+
+    def _pre_physics_step(self, actions: dict[str, torch.tensor]) -> None:
+        a = 2
+
+
+    def _apply_action(self) -> None:
+        a = 2
+
+
 
     def _reset_idx(self, env_ids: torch.Tensor | None):
-        print("Resetting environment indices.")
+        print("CA VAAAAA OU")
         if env_ids is None or len(env_ids) == self.num_envs:
             env_ids = self._robots[0]._ALL_INDICES
         for i, robot in enumerate(self._robots):
+            print("INSHALLAH")
             robot.reset(env_ids)
         super()._reset_idx(env_ids)
-
-    def _set_debug_vis_impl(self, debug_vis: bool):
-        if debug_vis:
-            print("Debug visualization enabled.")
-        else:
-            print("Debug visualization disabled.")
-
-
-
-

@@ -16,6 +16,10 @@ from omni.isaac.lab.sensors import (Camera,CameraCfg,RayCaster,RayCasterCfg,Tile
 from omni.isaac.lab_assets import CRAZYFLIE_CFG 
 from omni.isaac.lab.markers import CUBOID_MARKER_CFG 
 from omni.isaac.lab.terrains import TerrainImporterCfg, TerrainGeneratorCfg, HfDiscreteObstaclesTerrainCfg, TerrainImporter
+from gymnasium.spaces import Box, Dict
+import numpy as np
+from gymnasium import spaces
+
 
 @configclass
 class QuadcopterScene(InteractiveSceneCfg):
@@ -53,7 +57,7 @@ class QuadcopterScene(InteractiveSceneCfg):
 
 
 
-@configclass 
+@configclass
 class QuadcopterEnvCfg(DirectRLEnvCfg):
     decimation = 2
     episode_length_s = 10.0
@@ -61,7 +65,8 @@ class QuadcopterEnvCfg(DirectRLEnvCfg):
     num_states = 0
     debug_vis = True
     action_space = 4
-     
+    state_space = 0
+
     # Scene
     scene: InteractiveSceneCfg = QuadcopterScene(num_envs=4096, env_spacing=15.0)
 
@@ -79,13 +84,19 @@ class QuadcopterEnvCfg(DirectRLEnvCfg):
     )
 
     num_channels = 3
-    observation_space = num_channels * scene.camera.height * scene.camera.width #TODO: Certainly false need to check that
+    observation_space = {
+    "robot-state": 12,
+    "camera": [scene.camera.width, scene.camera.height, num_channels],
+    }
+
 
     thrust_to_weight = 1.9
     moment_scale = 0.01
-    lin_vel_reward_scale =  -0.05
+    lin_vel_reward_scale = -0.05
     ang_vel_reward_scale = -0.01
     distance_to_goal_reward_scale = 15.0
+
+
 
 
 class QuadcopterEnv(DirectRLEnv):
@@ -129,9 +140,9 @@ class QuadcopterEnv(DirectRLEnv):
 
     def _apply_action(self):
         self._robot.set_external_force_and_torque(self._thrust, self._moment, body_ids=self._body_id)
-
+    
     def _get_observations(self) -> dict:
-        cam_images = self.scene["camera"].data.output["rgb"][..., :3]
+        cam_images = self.scene["camera"].data.output["rgb"]
         desired_pos_b, _ = subtract_frame_transforms(
             self._robot.data.root_state_w[:, :3], self._robot.data.root_state_w[:, 3:7], self._desired_pos_w
         )
@@ -143,10 +154,14 @@ class QuadcopterEnv(DirectRLEnv):
             desired_pos_b,
         ], dim=-1)
 
-        return {
-            "policy": state,
-            "Camera": cam_images
+        observation = {
+            "policy": {
+                "robot-state": state,
+                "camera": cam_images,
+            }
         }
+        return observation
+        
 
     def _get_rewards(self) -> torch.Tensor:
         lin_vel = torch.sum(torch.square(self._robot.data.root_lin_vel_b), dim=1)

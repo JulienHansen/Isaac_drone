@@ -19,7 +19,6 @@ INSTALL_REQUIRES = [
 # Installation operation
 setup(
     name="Isaac_drone",
-    #packages=["Isaac_drone"],
     packages=find_packages(include=["Isaac_drone", "Isaac_drone.*"]),  # Include sub-packages
     author=EXTENSION_TOML_DATA["package"]["author"],
     maintainer=EXTENSION_TOML_DATA["package"]["maintainer"],
@@ -29,7 +28,14 @@ setup(
     keywords=EXTENSION_TOML_DATA["package"]["keywords"],
     install_requires=INSTALL_REQUIRES,
     license="MIT",
-    include_package_data=True,
+    include_package_data=True,  # Necessary for package_data to work
+    package_data={
+        "Isaac_drone": [
+            "tasks/Isaac_drone/agents/*.yaml", 
+            "tasks/Isaac_drone_v1/agents/*.yaml",  
+            "tasks/Isaac_drone_v2/agents/*.yaml",  
+        ]
+    },
     python_requires=">=3.10",
     classifiers=[
         "Natural Language :: English",
@@ -39,4 +45,5 @@ setup(
     ],
     zip_safe=False,
 )
+
 

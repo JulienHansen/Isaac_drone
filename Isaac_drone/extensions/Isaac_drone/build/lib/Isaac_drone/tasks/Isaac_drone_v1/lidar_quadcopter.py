@@ -105,10 +105,6 @@ class QuadcopterScene(InteractiveSceneCfg):
         width=80,
         height=80,
     )
-    contact_forces = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/body", update_period=0.0, history_length=0, debug_vis=True
-    )
-
     # lights
     dome_light = AssetBaseCfg(
         prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
@@ -117,12 +113,11 @@ class QuadcopterScene(InteractiveSceneCfg):
 @configclass 
 class LidarQuadcopterEnvCfg(DirectRLEnvCfg):
     decimation = 2
-    episode_length_s = 15.0
+    episode_length_s = 600.0
     action_scale = 100.0
-    num_states = 0
     debug_vis = True
     action_space = 4
-     
+    state_space = 0
     # Scene
     scene: InteractiveSceneCfg = QuadcopterScene(num_envs=7000, env_spacing=15.0)
 
@@ -140,14 +135,18 @@ class LidarQuadcopterEnvCfg(DirectRLEnvCfg):
     )
 
     num_channels = 3
-    observation_space = num_channels * scene.camera.height * scene.camera.width
+    
+    observation_space = {
+    "robot-state": 12,
+    "camera": [scene.camera.width, scene.camera.height, num_channels],
+    }
+
 
     thrust_to_weight = 1.9
     moment_scale = 0.01
     lin_vel_reward_scale =  -0.05
     ang_vel_reward_scale = -0.01
     distance_to_goal_reward_scale = 15.0
-    obstacle_penalty_scale = -1.0
 
 
 class LidarQuadcopterEnv(DirectRLEnv):
@@ -158,9 +157,8 @@ class LidarQuadcopterEnv(DirectRLEnv):
 
         self._robot = self.scene["robot"]
         self._camera = self.scene["camera"]
-        self._contact_sensor = self.scene["contact_forces"]
         self._terrain = self.scene["terrain"]
-
+        
         # Total thrust and moment applied to the base of the quadcopter
         self._actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
         self._thrust = torch.zeros(self.num_envs, 1, 3, device=self.device)
@@ -176,7 +174,6 @@ class LidarQuadcopterEnv(DirectRLEnv):
                 "lin_vel",
                 "ang_vel",
                 "distance_to_goal",
-                "collision",
             ]
         }
         # Get specific body indices
@@ -196,25 +193,26 @@ class LidarQuadcopterEnv(DirectRLEnv):
         self._robot.set_external_force_and_torque(self._thrust, self._moment, body_ids=self._body_id)
 
     def _get_observations(self) -> dict:
-       
-        # Compute desired position in the body frame
+
+        cam_images = self.scene["camera"].data.output["rgb"]
         desired_pos_b, _ = subtract_frame_transforms(
-            self._robot.data.root_state_w[:, :3], 
-            self._robot.data.root_state_w[:, 3:7], 
-            self._desired_pos_w
+            self._robot.data.root_state_w[:, :3], self._robot.data.root_state_w[:, 3:7], self._desired_pos_w
         )
-        
-        # Concatenate all observations
+
         state = torch.cat([
-            self._robot.data.root_lin_vel_b,        # Linear velocity
-            self._robot.data.root_ang_vel_b,        # Angular velocity
-            self._robot.data.projected_gravity_b,   # Projected gravity
-            desired_pos_b,                          # Desired position in body frame
+            self._robot.data.root_lin_vel_b,        
+            self._robot.data.root_ang_vel_b,        
+            self._robot.data.projected_gravity_b,   
+            desired_pos_b,
         ], dim=-1)
-        
-        return {
-            "policy": state,  
+
+        observation = {
+            "policy": {
+                "robot-state": state,
+                "camera": cam_images,
+            }
         }
+        return observation
 
     def _get_rewards(self) -> torch.Tensor:
         lin_vel = torch.sum(torch.square(self._robot.data.root_lin_vel_b), dim=1)
@@ -222,13 +220,11 @@ class LidarQuadcopterEnv(DirectRLEnv):
         distance_to_goal = torch.linalg.norm(self._desired_pos_w - self._robot.data.root_pos_w, dim=1)
         distance_to_goal_mapped = 7 * (1 - torch.tanh(distance_to_goal / 20)) + 0.3
         
-        collide = torch.full_like(lin_vel, 1.0 if torch.max(self.scene["contact_forces"].data.net_forces_w) > 4.0 else 0.0)
         
         rewards = {
             "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * self.step_dt,
             "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * self.step_dt,
             "distance_to_goal": distance_to_goal_mapped * self.cfg.distance_to_goal_reward_scale * self.step_dt,
-            "collision": collide * self.cfg.obstacle_penalty_scale * self.step_dt,
         }
 
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
@@ -246,9 +242,9 @@ class LidarQuadcopterEnv(DirectRLEnv):
         altitude = torch.logical_or(low_altitude, high_altitude)
         x_constraint = self._robot.data.root_pos_w[:, 0] < -22
         # Collision condition 
-        collide = torch.max(self.scene["contact_forces"].data.net_forces_w) > 4.0
 
-        died = torch.logical_or(collide, torch.logical_or(altitude, x_constraint))
+
+        died = torch.logical_or(altitude, x_constraint)
         return died, time_out
 
     def _reset_idx(self, env_ids: torch.Tensor | None):

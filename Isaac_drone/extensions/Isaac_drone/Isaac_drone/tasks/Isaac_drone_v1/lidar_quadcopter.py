@@ -1,7 +1,13 @@
+# python scripts/skrl/train.py --task=Isaac-lidar-drone --algorithm PPO  --enable_cameras  --num_envs=1000 --ml_framework torch
+# Only work with skrl 1.4 
+
+# TODO: Curriculum
+# Faster domain exploration and exploitation 
+#
+#
+
 from __future__ import annotations
-
 import torch
-
 import omni.isaac.lab.sim as sim_utils
 from omni.isaac.lab.assets import Articulation, ArticulationCfg, AssetBaseCfg
 from omni.isaac.lab.envs import DirectRLEnv, DirectRLEnvCfg
@@ -17,51 +23,67 @@ from omni.isaac.lab.sensors import (Camera,CameraCfg,RayCaster,RayCasterCfg,Tile
 from omni.isaac.lab.markers import CUBOID_MARKER_CFG 
 from omni.isaac.lab.terrains import TerrainImporterCfg, TerrainGeneratorCfg, HfDiscreteObstaclesTerrainCfg, TerrainImporter
 from omni.isaac.lab.utils.assets import ISAAC_NUCLEUS_DIR
+from omni.isaac.lab_assets import CRAZYFLIE_CFG 
+from omni.isaac.lab.sensors import RayCaster, RayCasterCfg, patterns
+from omni.isaac.core.utils.viewports import set_camera_view
+from omni.isaac.debug_draw import _debug_draw
+import einops
 
-CRAZYFLIE_CFG = ArticulationCfg(
-    prim_path="{ENV_REGEX_NS}/Robot",
-    spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{ISAAC_NUCLEUS_DIR}/Robots/Crazyflie/cf2x.usd",
-        activate_contact_sensors=True,
-        rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            disable_gravity=False,
-            max_depenetration_velocity=10.0,
-            enable_gyroscopic_forces=True,
-        ),
-        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=False,
-            solver_position_iteration_count=4,
-            solver_velocity_iteration_count=0,
-            sleep_threshold=0.005,
-            stabilization_threshold=0.001,
-        ),
-        copy_from_source=False,
-        
-    ),
-    init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.5),
-        joint_pos={
-            ".*": 0.0,
-        },
-        joint_vel={
-            "m1_joint": 200.0,
-            "m2_joint": -200.0,
-            "m3_joint": 200.0,
-            "m4_joint": -200.0,
-        },
-    ),
-    actuators={
-        "dummy": ImplicitActuatorCfg(
-            joint_names_expr=[".*"],
-            stiffness=0.0,
-            damping=0.0,
-        ),
-    },
-)
 
-@configclass
-class QuadcopterScene(InteractiveSceneCfg):
-    # Terrain
+class DebugDraw:
+    def __init__(self):
+        self._draw = _debug_draw.acquire_debug_draw_interface()
+
+    def clear(self):
+        self._draw.clear_lines()
+
+    def plot(self, x: torch.Tensor, size=2.0, color=(1., 1., 1., 1.)):
+        if not (x.ndim == 2) and (x.shape[1] == 3):
+            raise ValueError("x must be a tensor of shape (N, 3).")
+        x = x.cpu()
+        point_list_0 = x[:-1].tolist()
+        point_list_1 = x[1:].tolist()
+        sizes = [size] * len(point_list_0)
+        colors = [color] * len(point_list_0)
+        self._draw.draw_lines(point_list_0, point_list_1, colors, sizes)
+
+    def vector(self, x: torch.Tensor, v: torch.Tensor, size=2.0, color=(0., 1., 1., 1.)):
+        x = x.cpu().reshape(-1, 3)
+        v = v.cpu().reshape(-1, 3)
+        if not (x.shape == v.shape):
+            raise ValueError("x and v must have the same shape, got {} and {}.".format(x.shape, v.shape))
+        point_list_0 = x.tolist()
+        point_list_1 = (x + v).tolist()
+        sizes = [size] * len(point_list_0)
+        colors = [color] * len(point_list_0)
+        self._draw.draw_lines(point_list_0, point_list_1, colors, sizes)
+
+
+@configclass 
+class LidarQuadcopterEnvCfg(DirectRLEnvCfg):
+    decimation = 2
+    episode_length_s = 600.0
+    action_scale = 100.0
+    debug_vis = True
+    action_space = 4
+    state_space = 0
+
+    # Scene
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=5000, env_spacing=2.5, replicate_physics=True)
+
+    sim: SimulationCfg = SimulationCfg(
+        dt=1 / 100,
+        render_interval=decimation,
+        disable_contact_processing=True,
+        physics_material=sim_utils.RigidBodyMaterialCfg(
+            friction_combine_mode="multiply",
+            restitution_combine_mode="multiply",
+            static_friction=1.0,
+            dynamic_friction=1.0,
+            restitution=0.0,
+        ),
+    )
+
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
         terrain_type="generator",
@@ -93,61 +115,37 @@ class QuadcopterScene(InteractiveSceneCfg):
         collision_group=-1,
         debug_vis=False,
     )
-    # Robot with camera sensor for obs and contact sensor for collision detection
-    robot: ArticulationCfg = CRAZYFLIE_CFG.replace( prim_path="{ENV_REGEX_NS}/Robot",init_state=ArticulationCfg.InitialStateCfg(pos=(1,1,1)),)
-    camera: TiledCameraCfg = TiledCameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/body/Cam", 
-        offset=CameraCfg.OffsetCfg(pos=(0.510, 0.0, 0.015), rot=(0.5, -0.5, 0.5, -0.5), convention="ros"),
-        data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(
-            focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 20.0)
-        ),  
-        width=80,
-        height=80,
-    )
-    contact_forces = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/body", update_period=0.0, history_length=0, debug_vis=True
-    )
 
-    # lights
-    dome_light = AssetBaseCfg(
-        prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
-    )
+    robot = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot", init_state=ArticulationCfg.InitialStateCfg(pos=(1,1,1)))
 
-@configclass 
-class LidarQuadcopterEnvCfg(DirectRLEnvCfg):
-    decimation = 2
-    episode_length_s = 15.0
-    action_scale = 100.0
-    num_states = 0
-    debug_vis = True
-    action_space = 4
-     
-    # Scene
-    scene: InteractiveSceneCfg = QuadcopterScene(num_envs=7000, env_spacing=15.0)
+    lidar_range = 4.0
+    lidar_vfov = (
+            max(-89., -10),
+            min(89., 20)
+        )
+    ray_caster_cfg = RayCasterCfg(
+            prim_path="/World/envs/env_.*/Robot/body",
+            offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
+            attach_yaw_only=False,
+            pattern_cfg=patterns.BpearlPatternCfg(
+                vertical_ray_angles=torch.linspace(*lidar_vfov, 4)
+            ),
+            debug_vis=False,
+            mesh_prim_paths=["/World/ground"],
+        )
 
-    sim: SimulationCfg = SimulationCfg(
-        dt=1 / 100,
-        render_interval=decimation,
-        disable_contact_processing=True,
-        physics_material=sim_utils.RigidBodyMaterialCfg(
-            friction_combine_mode="multiply",
-            restitution_combine_mode="multiply",
-            static_friction=1.0,
-            dynamic_friction=1.0,
-            restitution=0.0,
-        ),
-    )
 
-    num_channels = 3
-    observation_space = num_channels * scene.camera.height * scene.camera.width
-
+    observation_space = {
+    "robot-state": 12,
+    "raycaster": [1, 36, 4],
+    }
+    
     thrust_to_weight = 1.9
     moment_scale = 0.01
     lin_vel_reward_scale =  -0.05
     ang_vel_reward_scale = -0.01
     distance_to_goal_reward_scale = 15.0
-    obstacle_penalty_scale = -1.0
+    survive_reward_scale = 0.2
 
 
 class LidarQuadcopterEnv(DirectRLEnv):
@@ -155,16 +153,16 @@ class LidarQuadcopterEnv(DirectRLEnv):
     cfg: LidarQuadcopterEnvCfg
     def __init__(self, cfg: LidarQuadcopterEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
-
-        self._robot = self.scene["robot"]
-        self._camera = self.scene["camera"]
-        self._contact_sensor = self.scene["contact_forces"]
-        self._terrain = self.scene["terrain"]
-
+    
         # Total thrust and moment applied to the base of the quadcopter
         self._actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
         self._thrust = torch.zeros(self.num_envs, 1, 3, device=self.device)
         self._moment = torch.zeros(self.num_envs, 1, 3, device=self.device)
+
+        self._lidar._initialize_impl()
+        self._lidar_resolution = (36, 4)
+
+        self.lidar_range = self.cfg.lidar_range
 
         # Goal position
         self._desired_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
@@ -176,9 +174,11 @@ class LidarQuadcopterEnv(DirectRLEnv):
                 "lin_vel",
                 "ang_vel",
                 "distance_to_goal",
-                "collision",
+                "survive",
             ]
         }
+        self.debug_draw = DebugDraw()
+
         # Get specific body indices
         self._body_id = self._robot.find_bodies("body")[0]
         self._robot_mass = self._robot.root_physx_view.get_masses()[0].sum()
@@ -186,6 +186,21 @@ class LidarQuadcopterEnv(DirectRLEnv):
         self._robot_weight = (self._robot_mass * self._gravity_magnitude).item()
 
         self.set_debug_vis(self.cfg.debug_vis)
+
+
+    def _setup_scene(self):
+        self._robot = Articulation(self.cfg.robot)
+        self.scene.articulations["robot"] = self._robot
+
+        self._terrain = self.cfg.terrain.class_type(self.cfg.terrain)
+        self._lidar = self.cfg.ray_caster_cfg.class_type(self.cfg.ray_caster_cfg)
+        # clone, filter, and replicate
+        self.scene.clone_environments(copy_from_source=False)
+        self.scene.filter_collisions(global_prim_paths=[self.cfg.terrain.prim_path])
+        # add lights
+        light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
+        light_cfg.func("/World/Light", light_cfg)
+
 
     def _pre_physics_step(self, actions: torch.Tensor):
         self._actions = actions.clone().clamp(-1.0, 1.0)
@@ -195,40 +210,57 @@ class LidarQuadcopterEnv(DirectRLEnv):
     def _apply_action(self):
         self._robot.set_external_force_and_torque(self._thrust, self._moment, body_ids=self._body_id)
 
+
     def _get_observations(self) -> dict:
-       
-        # Compute desired position in the body frame
-        desired_pos_b, _ = subtract_frame_transforms(
-            self._robot.data.root_state_w[:, :3], 
-            self._robot.data.root_state_w[:, 3:7], 
-            self._desired_pos_w
+
+        self.lidar_scan = self.lidar_range - (
+            (self._lidar.data.ray_hits_w - self._lidar.data.pos_w.unsqueeze(1))
+            .norm(dim=-1)
+            .clamp_max(self.lidar_range)
+            .reshape(self.num_envs, 1, *self._lidar_resolution)
         )
-        
-        # Concatenate all observations
+
+        desired_pos_b, _ = subtract_frame_transforms(
+            self._robot.data.root_state_w[:, :3], self._robot.data.root_state_w[:, 3:7], self._desired_pos_w
+        )
+
         state = torch.cat([
-            self._robot.data.root_lin_vel_b,        # Linear velocity
-            self._robot.data.root_ang_vel_b,        # Angular velocity
-            self._robot.data.projected_gravity_b,   # Projected gravity
-            desired_pos_b,                          # Desired position in body frame
+            self._robot.data.root_lin_vel_b,        
+            self._robot.data.root_ang_vel_b,        
+            self._robot.data.projected_gravity_b,   
+            desired_pos_b,
         ], dim=-1)
+
+        self.debug_draw.clear()
         
-        return {
-            "policy": state,  
+        x = self._lidar.data.pos_w[0]
+        v = (self._lidar.data.ray_hits_w[0] - x).reshape(*self._lidar_resolution, 3)
+        self.debug_draw.vector(x.expand_as(v[:, 0]), v[:, 0])
+        self.debug_draw.vector(x.expand_as(v[:, -1]), v[:, -1])
+
+
+        self._lidar.update(self.cfg.sim.dt)
+        observation = {
+            "policy": {
+                "robot-state": state,
+                "raycaster": self.lidar_scan,
+            }
         }
+        return observation
 
     def _get_rewards(self) -> torch.Tensor:
         lin_vel = torch.sum(torch.square(self._robot.data.root_lin_vel_b), dim=1)
         ang_vel = torch.sum(torch.square(self._robot.data.root_ang_vel_b), dim=1)
         distance_to_goal = torch.linalg.norm(self._desired_pos_w - self._robot.data.root_pos_w, dim=1)
         distance_to_goal_mapped = 7 * (1 - torch.tanh(distance_to_goal / 20)) + 0.3
+        reward_safety = torch.log(self.lidar_range - self.lidar_scan).mean(dim=(1, 2, 3))
         
-        collide = torch.full_like(lin_vel, 1.0 if torch.max(self.scene["contact_forces"].data.net_forces_w) > 4.0 else 0.0)
         
         rewards = {
             "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * self.step_dt,
             "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * self.step_dt,
             "distance_to_goal": distance_to_goal_mapped * self.cfg.distance_to_goal_reward_scale * self.step_dt,
-            "collision": collide * self.cfg.obstacle_penalty_scale * self.step_dt,
+            "survive": reward_safety * self.cfg.survive_reward_scale * self.step_dt,
         }
 
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
@@ -244,11 +276,19 @@ class LidarQuadcopterEnv(DirectRLEnv):
         low_altitude = self._robot.data.root_pos_w[:, 2] < 0.1
         high_altitude = self._robot.data.root_pos_w[:, 2] > 3.5
         altitude = torch.logical_or(low_altitude, high_altitude)
-        x_constraint = self._robot.data.root_pos_w[:, 0] < -22
-        # Collision condition 
-        collide = torch.max(self.scene["contact_forces"].data.net_forces_w) > 4.0
 
-        died = torch.logical_or(collide, torch.logical_or(altitude, x_constraint))
+        # X-Y Plane constraints
+        x_constraint = torch.logical_or(self._robot.data.root_pos_w[:, 0] < -22, self._robot.data.root_pos_w[:, 0] > 22)
+        y_constraint = torch.logical_or(self._robot.data.root_pos_w[:, 1] < -11, self._robot.data.root_pos_w[:, 1] > 11)
+        xy_constraint = torch.logical_or(x_constraint, y_constraint)
+
+        # Domain constraints
+        domain_constraint = torch.logical_or(xy_constraint, altitude)
+
+        distance_constraint = (einops.reduce(self.lidar_scan, "n 1 w h -> n", "max") > (self.lidar_range - 1))
+
+        # Combine the constraints
+        died = torch.logical_or(domain_constraint, distance_constraint)
         return died, time_out
 
     def _reset_idx(self, env_ids: torch.Tensor | None):
@@ -289,7 +329,7 @@ class LidarQuadcopterEnv(DirectRLEnv):
         default_root_state = self._robot.data.default_root_state[env_ids]
         default_root_state[:, 0] = -20
         default_root_state[:, 1] = torch.zeros_like(default_root_state[:, 1]).uniform_(-10, 10)
-        default_root_state[:, 2] = 3 
+        default_root_state[:, 2] = 2
         self._robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
         self._robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
         self._robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
