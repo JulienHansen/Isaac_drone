@@ -260,7 +260,7 @@ class formationEnv(DirectMARLEnv):
         self.episode_length_buf[env_ids] = torch.randint(
             low=0,
             high=int(self.max_episode_length),
-            size=(len(env_ids),),
+            size=(len(env_ids),), #type: ignore
             device=self.device
         )
 

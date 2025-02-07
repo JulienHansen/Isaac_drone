@@ -88,6 +88,11 @@ agent:
     experiment_name: "100k"
     write_interval: auto
     checkpoint_interval: auto
+    wandb: True
+    wandb_kwargs:
+      project: "isaaclab"       # Can be changed to whatever project you want
+      entity: "hansenjulienpro-univesity-of-liege"   # your wandb username or team name
+
 
 
 # Sequential trainer

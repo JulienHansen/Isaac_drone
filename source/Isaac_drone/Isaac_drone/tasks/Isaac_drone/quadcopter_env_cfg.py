@@ -1,8 +1,3 @@
-# Copyright (c) 2022-2025, The Isaac Lab Project Developers.
-# All rights reserved.
-#
-# SPDX-License-Identifier: BSD-3-Clause
-
 from __future__ import annotations
 
 import gymnasium as gym
@@ -19,9 +14,7 @@ from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.math import subtract_frame_transforms
 
-##
 # Pre-defined configs
-##
 from isaaclab_assets import CRAZYFLIE_CFG  # isort: skip
 from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
 
@@ -211,7 +204,7 @@ class QuadcopterEnv(DirectRLEnv):
 
         self._robot.reset(env_ids)
         super()._reset_idx(env_ids)
-        if len(env_ids) == self.num_envs: #type: ignore
+        if len(env_ids) == self.num_envs:  # type: ignore
             # Spread out the resets to avoid spikes in training when many environments reset at a similar time
             self.episode_length_buf = torch.randint_like(self.episode_length_buf, high=int(self.max_episode_length))
 
@@ -230,20 +223,39 @@ class QuadcopterEnv(DirectRLEnv):
         self._robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
 
     def _set_debug_vis_impl(self, debug_vis: bool):
-        # create markers if necessary for the first tome
+        # create markers if necessary for the first time
         if debug_vis:
             if not hasattr(self, "goal_pos_visualizer"):
                 marker_cfg = CUBOID_MARKER_CFG.copy()
                 marker_cfg.markers["cuboid"].size = (0.05, 0.05, 0.05)
-                # -- goal pose
+                # -- goal pose marker
                 marker_cfg.prim_path = "/Visuals/Command/goal_position"
                 self.goal_pos_visualizer = VisualizationMarkers(marker_cfg)
-            # set their visibility to true
+            if not hasattr(self, "drone_cube_marker"):
+                # Create a marker for the blue cube on top of the drone
+                marker_cfg = CUBOID_MARKER_CFG.copy()
+                marker_cfg.markers["cuboid"].size = (0.1, 0.1, 0.1)  # adjust cube size as needed
+                # Set the marker's visual material diffuse_color to blue
+                marker_cfg.markers["cuboid"].visual_material.diffuse_color = (0.0, 0.0, 1.0)
+                marker_cfg.prim_path = "/Visuals/Drone/cube"
+                self.drone_cube_marker = VisualizationMarkers(marker_cfg)
+            # set markers visibility to true
             self.goal_pos_visualizer.set_visibility(True)
+            self.drone_cube_marker.set_visibility(True)
         else:
             if hasattr(self, "goal_pos_visualizer"):
                 self.goal_pos_visualizer.set_visibility(False)
+            if hasattr(self, "drone_cube_marker"):
+                self.drone_cube_marker.set_visibility(False)
 
     def _debug_vis_callback(self, event):
-        # update the markers
+        # update the goal position marker
         self.goal_pos_visualizer.visualize(self._desired_pos_w)
+        
+        # update the drone blue cube marker:
+        # Get the drone's current world positions
+        drone_positions = self._robot.data.root_pos_w.clone()
+        # Add an upward offset (e.g., 0.1 units) so the cube sits on top of the drone
+        offset = 0.1  # adjust the offset based on your drone's dimensions
+        drone_positions[:, 2] += offset
+        self.drone_cube_marker.visualize(drone_positions)
