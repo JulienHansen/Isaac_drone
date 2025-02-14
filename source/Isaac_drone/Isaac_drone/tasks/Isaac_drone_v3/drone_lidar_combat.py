@@ -24,7 +24,7 @@ from isaaclab_assets import CRAZYFLIE_CFG  # isort: skip
 from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
 
 @configclass
-class DefenseEnvCfg(DirectMARLEnvCfg):
+class CombatLidarEnvCfg(DirectMARLEnvCfg):
     decimation = 2
     episode_length_s = 5.0
     action_scale = 100.0
@@ -33,27 +33,24 @@ class DefenseEnvCfg(DirectMARLEnvCfg):
     lin_vel_reward_scale = -0.05
     ang_vel_reward_scale = -0.01
     distance_to_goal_reward_scale = 15.0
+    distance_from_defender_reward_scale = 5.0
+    distance_to_attacker_reward_scale = 5.0
     debug_vis = True
 
     possible_agents = [
         "drone_attack",
         "drone_defense",
     ]
-
     action_spaces = {
         "drone_attack": Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32),
         "drone_defense": Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32),
     }
-
     individual_action_space = 4
-
     observation_spaces = {
         "drone_attack": Box(low=-np.inf, high=np.inf, shape=(12,), dtype=np.float32), # Need to be modified 
-        "drone_defense": Box(low=-np.inf, high=np.inf, shape=(12,), dtype=np.float32), # Need to be modified
+        "drone_defense": Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32), # Need to be modified
     }
-
-    state_space = 38
-
+    state_space = 32
     sim = SimulationCfg(
         dt = 1 / 100,
         render_interval = decimation,
@@ -87,10 +84,10 @@ class DefenseEnvCfg(DirectMARLEnvCfg):
     drone_attack = CRAZYFLIE_CFG.replace(prim_path = "/World/envs/env_.*/drone_attack")
     drone_defense = CRAZYFLIE_CFG.replace(prim_path = "/World/envs/env_.*/drone_defense")
 
-class DefenseEnv(DirectMARLEnv):
-    cfg: DefenseEnvCfg
+class CombatLidarEnv(DirectMARLEnv):
+    cfg: CombatLidarEnvCfg
 
-    def __init__(self, cfg: DefenseEnvCfg, render_mode: str | None = None, **kwargs):
+    def __init__(self, cfg: CombatLidarEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
         n_agents = len(cfg.possible_agents)
         self._actions = torch.zeros(self.num_envs, n_agents, cfg.individual_action_space, device = self.device)
@@ -137,90 +134,102 @@ class DefenseEnv(DirectMARLEnv):
         # Build state for drone_attack:
         state_drone_attack = torch.cat(
             [
-                self._desired_pos_w,
-                self._drone_defense.data.root_pos_w,
-                self._drone_defense.data.root_lin_vel_b,
-                self._drone_defense.data.root_ang_vel_b,
-                self._drone_defense.data.projected_gravity_b,
-                self._actions[:, 1, :]                    # TODO: check if that is needed
+                torch.zeros_like(self._drone_defense.data.root_pos_w),
+                torch.zeros_like(self._drone_defense.data.root_lin_vel_b),
+                torch.zeros_like(self._drone_defense.data.root_ang_vel_b),
+                torch.zeros_like(self._drone_defense.data.projected_gravity_b),
+                torch.zeros_like(self._actions[:, 1, :])                     # TODO: check if that is needed
             ],
             dim=-1
         )
         # Build state for drone_defense:
         state_drone_defense = torch.cat(
             [
-                self._desired_pos_w,
-                self._drone_defense.data.root_pos_w,
-                self._drone_defense.data.root_lin_vel_b,
-                self._drone_defense.data.root_ang_vel_b,
-                self._drone_defense.data.projected_gravity_b,
-                self._actions[:, 1, :]                    # TODO: check if that is needed
+                torch.zeros_like(self._drone_defense.data.root_pos_w),
+                torch.zeros_like(self._drone_defense.data.root_lin_vel_b),
+                torch.zeros_like(self._drone_defense.data.root_ang_vel_b),
+                torch.zeros_like(self._drone_defense.data.projected_gravity_b),
+                torch.zeros_like(self._actions[:, 1, :])                     # TODO: check if that is needed
             ],
             dim=-1
         )
         return torch.cat([state_drone_attack, state_drone_defense], dim=-1)
 
+
     def _get_observations(self) -> dict[str, torch.Tensor]:
+        desired_pos_b, _ = subtract_frame_transforms(
+            self._drone_attack.data.root_state_w[:, :3], self._drone_attack.data.root_state_w[:, 3:7], self._desired_pos_w
+        )
         obs = {
             "drone_attack": torch.cat(
                 [
-                    self._drone_attack.data.root_pos_w,            # TODO: modify that 
+                    desired_pos_b,          
                     self._drone_attack.data.root_lin_vel_b,
                     self._drone_attack.data.root_ang_vel_b,
                     self._drone_attack.data.projected_gravity_b
                 ],
                 dim=-1
             ),
+            
             "drone_defense": torch.cat(
                 [
-                    torch.zeros_like(self._drone_attack.data.root_pos_w),            # The defender know the position of the attacker
-                    torch.zeros_like(self._drone_defense.data.root_lin_vel_b),
-                    torch.zeros_like(self._drone_defense.data.root_ang_vel_b),
-                    torch.zeros_like(self._drone_defense.data.projected_gravity_b)
+                    torch.zeros_like(self._drone_defense.data.root_pos_w),
                 ],
                 dim=-1
             )
         }
-        #print("observations" , obs)
         return obs
 
 
     def _get_rewards(self) -> dict[str, torch.Tensor]:
         rewards = {}
-        test_reward = rewards
-        for agent in self.cfg.possible_agents:
-            if agent == "drone_attack":
-                lin_vel = torch.sum(torch.square(self._drone_attack.data.root_lin_vel_b), dim=1)
-                ang_vel = torch.sum(torch.square(self._drone_attack.data.root_ang_vel_b), dim=1)
-                distance_to_goal = torch.linalg.norm(self._desired_pos_w - self._drone_attack.data.root_pos_w, dim=1)
-                distance_to_goal_mapped = 1 - torch.tanh(distance_to_goal / 0.8)
-                reward = (
-                    lin_vel * self.cfg.lin_vel_reward_scale +
-                    ang_vel * self.cfg.ang_vel_reward_scale +
-                    distance_to_goal_mapped * self.cfg.distance_to_goal_reward_scale
-                ) * self.step_dt
-                test_reward = reward
-            elif agent == "drone_defense":
-                reward = torch.zeros_like(test_reward)
-            else:
-                raise ValueError(f"Unknown agent key: {agent}")
-            
-            rewards[agent] = reward
-            # Logging
-            #self._episode_sums[f"{agent}_reward"] += reward
-        #print("reward", rewards)
+
+        attacker_pos = self._drone_attack.data.root_pos_w
+        defender_pos = self._drone_defense.data.root_pos_w
+        distance_between_drones = torch.linalg.norm(attacker_pos - defender_pos, dim=1)
+
+        # Compute rewards for drone_attack
+        lin_vel = torch.sum(torch.square(self._drone_attack.data.root_lin_vel_b), dim=1)
+        ang_vel = torch.sum(torch.square(self._drone_attack.data.root_ang_vel_b), dim=1)
+        distance_to_goal = torch.linalg.norm(self._desired_pos_w - attacker_pos, dim=1)
+        distance_to_goal_mapped = 1 - torch.tanh(distance_to_goal / 0.8)
+
+        reward_attack = (
+            lin_vel * self.cfg.lin_vel_reward_scale +
+            ang_vel * self.cfg.ang_vel_reward_scale +
+            distance_to_goal_mapped * self.cfg.distance_to_goal_reward_scale
+        ) * self.step_dt
+
+        # Assign rewards
+        rewards["drone_attack"] = reward_attack
+        rewards["drone_defense"] = torch.zeros_like(reward_attack)  # Placeholder for drone_defense
+
         return rewards
 
 
+    
     def _get_dones(self) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
         terminated = {}
         time_outs = {}
+        # Define a distance threshold either from your config or default to 1.0
+        threshold = getattr(self.cfg, 'distance_threshold', 1.0)
+        
+        # Stack positions of all drones
+        drone_pos = torch.stack([r.data.root_pos_w for r in self._robots])
+        
         for i, name in enumerate(self.cfg.possible_agents):
+            pos_i = drone_pos[i]
+            # Compute distances from drone i to all drones
+            dists = torch.norm(drone_pos - pos_i.unsqueeze(0), dim=-1)
+            # Ignore self-distance by setting it to infinity
+            dists[i] = float('inf')
+            min_dist = dists.min(dim=0).values
             alt = self._robots[i].data.root_pos_w[:, 2]
-            terminated[name] = (alt < 0.2)
-
+            
+            terminated[name] = (alt < 0.2) | (min_dist < threshold)
             # Terminate if maximum episode length is reached
             time_outs[name] = self.episode_length_buf >= self.max_episode_length - 1
+        
         return terminated, time_outs
         
 
@@ -258,18 +267,30 @@ class DefenseEnv(DirectMARLEnv):
         self._actions[env_ids] = 0.0
 
         # Sample new commands
-        self._desired_pos_w[env_ids, :2] = torch.zeros_like(self._desired_pos_w[env_ids, :2]).uniform_(-5.0, 5.0)
-        self._desired_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
-        self._desired_pos_w[env_ids, 2] = torch.zeros_like(self._desired_pos_w[env_ids, 2]).uniform_(0.5, 1.5)
+        self._desired_pos_w[env_ids, 0] = 20.0
+        self._desired_pos_w[env_ids, 1] = 0
+        self._desired_pos_w[env_ids, 2] = 3.0
 
         for agent, robot in zip(self.cfg.possible_agents, self._robots):
             joint_pos = robot.data.default_joint_pos[env_ids]
             joint_vel = robot.data.default_joint_vel[env_ids]
             default_root_state = robot.data.default_root_state[env_ids].clone()
 
+
+            if agent == "drone_attack":
+                default_root_state[:, 0] = 0  
+            elif agent == "drone_defense":
+                default_root_state[:, 0] = 19  
+
+            # Set y and z coordinates (y is randomized, z is fixed)
+            default_root_state[:, 1] = 0.0
+            default_root_state[:, 2] = 3.0
+            
+            '''
             default_root_state[:, :2] = torch.zeros_like(self._desired_pos_w[env_ids, :2]).uniform_(-5.0, 5.0)
             default_root_state[:, :2] += self._terrain.env_origins[env_ids, :2]
             default_root_state[:, 2] = torch.zeros_like(self._desired_pos_w[env_ids, 2]).uniform_(0.5, 1.5)
+            '''
 
             # Write the new states to simulation
             robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)

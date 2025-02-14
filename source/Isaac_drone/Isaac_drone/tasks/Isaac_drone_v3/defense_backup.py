@@ -159,29 +159,41 @@ class DefenseEnv(DirectMARLEnv):
             ),
             "drone_defense": torch.cat(
                 [
-                    self._drone_attack.data.root_pos_w,            # The defender know the position of the attacker
-                    self._drone_defense.data.root_lin_vel_b,
-                    self._drone_defense.data.root_ang_vel_b,
-                    self._drone_defense.data.projected_gravity_b
+                    torch.zero_like(self._drone_attack.data.root_pos_w),            # The defender know the position of the attacker
+                    torch.zero_like(self._drone_defense.data.root_lin_vel_b),
+                    torch.zero_like(self._drone_defense.data.root_ang_vel_b),
+                    torch.zero_like(self._drone_defense.data.projected_gravity_b)
                 ],
                 dim=-1
             )
         }
+        print(obs)
         return obs
 
 
     def _get_rewards(self) -> dict[str, torch.Tensor]:
-        rewards = torch.zeros(self.num_envs, 2, device=self.device)
-        # Optionally check for NaNs and replace them
-        if torch.any(torch.isnan(rewards)):
-            print("Warning: NaN detected in rewards. Replacing with zeros.")
-            rewards = torch.zeros_like(rewards)
-        
-        rewards_dict = {
-            "drone_attack": rewards[:, 0],
-            "drone_defense": rewards[:, 1]
-        }
-        return rewards_dict
+        rewards = {}
+        for agent in self.cfg.possible_agents:
+            if agent == "drone_attack":
+                lin_vel = torch.sum(torch.square(self._drone_attack.data.root_lin_vel_b), dim=1)
+                ang_vel = torch.sum(torch.square(self._drone_attack.data.root_ang_vel_b), dim=1)
+                distance_to_goal = torch.linalg.norm(self._desired_pos_w - self._drone_attack.data.root_pos_w, dim=1)
+                distance_to_goal_mapped = 1 - torch.tanh(distance_to_goal / 0.8)
+                reward = (
+                    lin_vel * self.cfg.lin_vel_reward_scale +
+                    ang_vel * self.cfg.ang_vel_reward_scale +
+                    distance_to_goal_mapped * self.cfg.distance_to_goal_reward_scale
+                ) * self.step_dt
+            elif agent == "drone_defense":
+                reward = torch.zeros((self.num_envs), self.device)
+            else:
+                raise ValueError(f"Unknown agent key: {agent}")
+            
+            rewards[agent] = reward
+            # Logging
+            #self._episode_sums[f"{agent}_reward"] += reward
+        print(rewards)
+        return rewards
 
 
     def _get_dones(self) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
