@@ -275,3 +275,70 @@ class DefenseEnv(DirectMARLEnv):
             robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
             robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
             robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
+
+
+
+    '''
+    def _get_observations(self) -> dict[str, torch.Tensor]:
+        desired_pos_b, _ = subtract_frame_transforms(
+            self._drone_attack.data.root_state_w[:, :3], self._drone_attack.data.root_state_w[:, 3:7], self._desired_pos_w
+        )
+        obs = {
+            "drone_attack": torch.cat(
+                [
+                    desired_pos_b,          
+                    self._drone_attack.data.root_lin_vel_b,
+                    self._drone_attack.data.root_ang_vel_b,
+                    self._drone_attack.data.projected_gravity_b
+                ],
+                dim=-1
+            ),
+            
+            "drone_defense": torch.cat(
+                [
+                    self._drone_attack.data.root_pos_w,
+                    self._drone_defense.data.root_lin_vel_b,
+                    self._drone_defense.data.root_ang_vel_b,
+                    self._drone_defense.data.projected_gravity_b
+                ],
+                dim=-1
+            )
+        }
+        return obs
+        '''
+    '''
+    def _get_rewards(self) -> dict[str, torch.Tensor]:
+        # Still need to add huge penalty for going out of bound 
+        rewards = {}
+
+        attacker_pos = self._drone_attack.data.root_pos_w
+        defender_pos = self._drone_defense.data.root_pos_w
+
+        distance_between_drones = torch.linalg.norm(attacker_pos - defender_pos, dim=1)
+        defenser_win = torch.where(distance_between_drones < .5, torch.tensor(10.0, device=distance_between_drones.device), torch.tensor(0.0, device=distance_between_drones.device))
+
+        lin_vel_attack = torch.sum(torch.square(self._drone_attack.data.root_lin_vel_b), dim=1)
+        ang_vel_attack = torch.sum(torch.square(self._drone_attack.data.root_ang_vel_b), dim=1)
+        lin_vel_defense = torch.sum(torch.square(self._drone_defense.data.root_lin_vel_b), dim=1)
+        ang_vel_defense = torch.sum(torch.square(self._drone_defense.data.root_ang_vel_b), dim=1)
+
+        distance_to_goal = torch.linalg.norm(self._desired_pos_w - attacker_pos, dim=1)
+        attacker_win = torch.where(distance_to_goal < .5, torch.tensor(10.0, device=distance_to_goal.device), torch.tensor(0.0, device=distance_to_goal.device))
+
+        reward_attack = (
+            lin_vel_attack * self.cfg.lin_vel_reward_scale +
+            ang_vel_attack * self.cfg.ang_vel_reward_scale +
+            attacker_win - defenser_win
+        ) * self.step_dt
+
+        reward_defense = (
+            lin_vel_defense * self.cfg.lin_vel_reward_scale +
+            ang_vel_defense * self.cfg.ang_vel_reward_scale +
+            defenser_win - attacker_win
+        ) * self.step_dt
+
+        rewards["drone_attack"] = reward_attack
+        rewards["drone_defense"] = reward_defense  
+
+        return rewards
+    '''

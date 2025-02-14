@@ -48,7 +48,7 @@ class DefenseEnvCfg(DirectMARLEnvCfg):
     individual_action_space = 4
 
     observation_spaces = {
-        "drone_attack": Box(low=-np.inf, high=np.inf, shape=(12,), dtype=np.float32), # Need to be modified 
+        "drone_attack": Box(low=-np.inf, high=np.inf, shape=(15,), dtype=np.float32), # Need to be modified 
         "drone_defense": Box(low=-np.inf, high=np.inf, shape=(12,), dtype=np.float32), # Need to be modified
     }
 
@@ -138,11 +138,11 @@ class DefenseEnv(DirectMARLEnv):
         state_drone_attack = torch.cat(
             [
                 self._desired_pos_w,
-                self._drone_defense.data.root_pos_w,
-                self._drone_defense.data.root_lin_vel_b,
-                self._drone_defense.data.root_ang_vel_b,
-                self._drone_defense.data.projected_gravity_b,
-                self._actions[:, 1, :]                    # TODO: check if that is needed
+                self._drone_attack.data.root_pos_w,
+                self._drone_attack.data.root_lin_vel_b,
+                self._drone_attack.data.root_ang_vel_b,
+                self._drone_attack.data.projected_gravity_b,
+                self._actions[:, 0, :]                    # TODO: check if that is needed
             ],
             dim=-1
         )
@@ -161,9 +161,13 @@ class DefenseEnv(DirectMARLEnv):
         return torch.cat([state_drone_attack, state_drone_defense], dim=-1)
 
     def _get_observations(self) -> dict[str, torch.Tensor]:
+        desired_pos_b, _ = subtract_frame_transforms(
+            self._drone_attack.data.root_state_w[:, :3], self._drone_attack.data.root_state_w[:, 3:7], self._desired_pos_w
+        )
         obs = {
             "drone_attack": torch.cat(
                 [
+                    desired_pos_b,
                     self._drone_attack.data.root_pos_w,            # TODO: modify that 
                     self._drone_attack.data.root_lin_vel_b,
                     self._drone_attack.data.root_ang_vel_b,
@@ -187,7 +191,6 @@ class DefenseEnv(DirectMARLEnv):
 
     def _get_rewards(self) -> dict[str, torch.Tensor]:
         rewards = {}
-        test_reward = rewards
         for agent in self.cfg.possible_agents:
             if agent == "drone_attack":
                 lin_vel = torch.sum(torch.square(self._drone_attack.data.root_lin_vel_b), dim=1)
@@ -199,9 +202,8 @@ class DefenseEnv(DirectMARLEnv):
                     ang_vel * self.cfg.ang_vel_reward_scale +
                     distance_to_goal_mapped * self.cfg.distance_to_goal_reward_scale
                 ) * self.step_dt
-                test_reward = reward
             elif agent == "drone_defense":
-                reward = torch.zeros_like(test_reward)
+                reward = torch.zeros(self.num_envs, device=self.device)
             else:
                 raise ValueError(f"Unknown agent key: {agent}")
             
