@@ -98,13 +98,14 @@ class CombatEnvCfg(DirectMARLEnvCfg):
         replicate_physics = True
     )
 
-    drone_attack_1 = CRAZYFLIE_CFG.replace(prim_path = "/World/envs/env_.*/drone_attack")
-    drone_attack_2 = CRAZYFLIE_CFG.replace(prim_path = "/World/envs/env_.*/drone_attack")
-    drone_attack_3 = CRAZYFLIE_CFG.replace(prim_path = "/World/envs/env_.*/drone_attack")
+    drone_attack_1 = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/drone_attack_1")
+    drone_attack_2 = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/drone_attack_2")
+    drone_attack_3 = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/drone_attack_3")
 
-    drone_defense_1 = CRAZYFLIE_CFG.replace(prim_path = "/World/envs/env_.*/drone_defense")
-    drone_defense_2 = CRAZYFLIE_CFG.replace(prim_path = "/World/envs/env_.*/drone_defense")
-    drone_defense_3 = CRAZYFLIE_CFG.replace(prim_path = "/World/envs/env_.*/drone_defense")
+    drone_defense_1 = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/drone_defense_1")
+    drone_defense_2 = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/drone_defense_2")
+    drone_defense_3 = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/drone_defense_3")
+
 
 class CombatEnv(DirectMARLEnv):
     cfg: CombatEnvCfg
@@ -390,114 +391,109 @@ class CombatEnv(DirectMARLEnv):
         if env_ids is None:
             env_ids = self._drone_attack_1._ALL_INDICES
 
-        for robot in self._robots:
-            robot.reset(env_ids)
+        # Reset each drone individually.
+        self._drone_attack_1.reset(env_ids)
+        self._drone_attack_2.reset(env_ids)
+        self._drone_attack_3.reset(env_ids)
+        self._drone_defense_1.reset(env_ids)
+        self._drone_defense_2.reset(env_ids)
+        self._drone_defense_3.reset(env_ids)
 
+        # Call parent reset and clear actions.
         super()._reset_idx(env_ids)
         self._actions[env_ids] = 0.0
 
-        # Sample new goal positions
+        # Set a common desired goal position (if needed).
         self._desired_pos_w[env_ids, 0] = 7.0
-        self._desired_pos_w[env_ids, 1] = 0
+        self._desired_pos_w[env_ids, 1] = 0.0
         self._desired_pos_w[env_ids, 2] = 3.0
 
-        # Create separate tensors for attackers and defenders
-        default_root_states = {}
+        # Map agent names to their corresponding drone objects.
+        drone_mapping = {
+            "drone_attack_1": self._drone_attack_1,
+            "drone_attack_2": self._drone_attack_2,
+            "drone_attack_3": self._drone_attack_3,
+            "drone_defense_1": self._drone_defense_1,
+            "drone_defense_2": self._drone_defense_2,
+            "drone_defense_3": self._drone_defense_3,
+        }
 
-        for agent, robot in zip(self.cfg.possible_agents, self._robots):
-            default_root_state = robot.data.default_root_state[env_ids].clone()  # Clone to prevent overwriting
+        # Define fixed spawn positions (x, y, z) for each drone.
+        spawn_positions = {
+            "drone_attack_1": (-5.0, -3.0, 3.0),
+            "drone_attack_2": (-6.0, -3.0, 3.0),
+            "drone_attack_3": (-7.0, -3.0, 3.0),
+            "drone_defense_1": (5.0, 3.0, 3.0),
+            "drone_defense_2": (6.0, 3.0, 3.0),
+            "drone_defense_3": (7.0, 3.0, 3.0),
+        }
 
-            if agent.startswith("drone_attack"):
-                print(f"Spawning attacker: {agent}")
-                default_root_state[:, 0] = -5.0  # Attackers spawn at x = -5
-                default_root_state[:, 1] = -3
-            
-            elif agent.startswith("drone_defense"):
-                print(f"Spawning defender: {agent}")
-                default_root_state[:, 0] = 5.0  # Defenders spawn at x = 5
-                default_root_state[:, 1] = 3
+        # For each drone, update its root state with the fixed spawn position.
+        for agent, drone in drone_mapping.items():
+            default_root_state = drone.data.default_root_state[env_ids].clone()
+            pos = spawn_positions[agent]
+            default_root_state[:, 0] = pos[0]  # X coordinate.
+            default_root_state[:, 1] = pos[1]  # Y coordinate.
+            default_root_state[:, 2] = pos[2]  # Z coordinate.
 
-            # Set fixed Z position
-            default_root_state[:, 2] = 3.0  
+            drone.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
+            drone.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
+            drone.write_joint_state_to_sim(
+                drone.data.default_joint_pos[env_ids],
+                drone.data.default_joint_vel[env_ids],
+                None,
+                env_ids
+            )
 
-            # Store separately for each agent
-            default_root_states[agent] = default_root_state
-
-        # Apply changes after all modifications to avoid overwrites
-        for agent, robot in zip(self.cfg.possible_agents, self._robots):
-            robot.write_root_pose_to_sim(default_root_states[agent][:, :7], env_ids)
-            robot.write_root_velocity_to_sim(default_root_states[agent][:, 7:], env_ids)
-            robot.write_joint_state_to_sim(robot.data.default_joint_pos[env_ids], 
-                                        robot.data.default_joint_vel[env_ids], 
-                                        None, env_ids)
 
 
     def _set_debug_vis_impl(self, debug_vis: bool):
         if debug_vis:
             if not hasattr(self, "goal_pos_visualizer"):
-                 # Green goal marker 
                 marker_cfg = CUBOID_MARKER_CFG.copy()
                 marker_cfg.markers["cuboid"].size = (0.1, 0.1, 0.1)
                 marker_cfg.markers["cuboid"].visual_material.diffuse_color = (0.0, 1.0, 0.0)
                 marker_cfg.prim_path = "/Visuals/Command/goal_position"
                 self.goal_pos_visualizer = VisualizationMarkers(marker_cfg)
 
-            if not hasattr(self, "drone_defense_cube_marker"):
-                # Create a marker for the blue cube on top of the defense drone
+            # Create separate markers with unique prim paths for each drone.
+            for agent in self.cfg.possible_agents:
+                prim_path = f"/Visuals/Markers/cube_{agent}"  # Unique prim path
                 marker_cfg = CUBOID_MARKER_CFG.copy()
-                marker_cfg.markers["cuboid"].size = (0.1, 0.1, 0.1)  
-                marker_cfg.markers["cuboid"].visual_material.diffuse_color = (0.0, 0.0, 1.0)
-                marker_cfg.prim_path = "/Visuals/Drone/cube"
-                self.drone_defense_cube_marker = VisualizationMarkers(marker_cfg)
-
-            if not hasattr(self, "drone_attack_cube_marker"):
-                # Create a marker for the red cube on top of the attack drone
-                marker_cfg = CUBOID_MARKER_CFG.copy()
-                marker_cfg.markers["cuboid"].size = (0.1, 0.1, 0.1)  
-                marker_cfg.markers["cuboid"].visual_material.diffuse_color = (1.0, 0.0, 0.0)
-                marker_cfg.prim_path = "/Visuals/Drone/cube"
-                self.drone_attack_cube_marker = VisualizationMarkers(marker_cfg)
-
-            self.goal_pos_visualizer.set_visibility(True)
-            self.drone_defense_cube_marker.set_visibility(True)
-            self.drone_attack_cube_marker.set_visibility(True)
+                marker_cfg.markers["cuboid"].size = (0.1, 0.1, 0.1)
+                # Set color based on agent type.
+                if "attack" in agent:
+                    marker_cfg.markers["cuboid"].visual_material.diffuse_color = (1.0, 0.0, 0.0)
+                else:
+                    marker_cfg.markers["cuboid"].visual_material.diffuse_color = (0.0, 0.0, 1.0)
+                marker_cfg.prim_path = prim_path  # Assign the unique prim path.
+                setattr(self, f"{agent}_cube_marker", VisualizationMarkers(marker_cfg))
+                getattr(self, f"{agent}_cube_marker").set_visibility(True)
         else:
             if hasattr(self, "goal_pos_visualizer"):
                 self.goal_pos_visualizer.set_visibility(False)
-            if hasattr(self, "drone_defense_cube_marker"):
-                self.drone_defense_cube_marker.set_visibility(False)
-            if hasattr(self, "drone_attack_cube_marker"):
-                self.drone_attack_cube_marker.set_visibility(False)
+            for agent in self.cfg.possible_agents:
+                marker_attr = f"{agent}_cube_marker"
+                if hasattr(self, marker_attr):
+                    getattr(self, marker_attr).set_visibility(False)
+
+
 
     def _debug_vis_callback(self, event):
         # update the goal position marker
         self.goal_pos_visualizer.visualize(self._desired_pos_w)
 
-        # update the drones blue and red cube marker:
-        drone_positions_defense_1 = self._drone_defense_1.data.root_pos_w.clone()
-        drone_positions_attack_1 = self._drone_attack_1.data.root_pos_w.clone()
-        drone_positions_defense_2 = self._drone_defense_2.data.root_pos_w.clone()
-        drone_positions_attack_2 = self._drone_attack_2.data.root_pos_w.clone()
-        drone_positions_defense_3 = self._drone_defense_3.data.root_pos_w.clone()
-        drone_positions_attack_3 = self._drone_attack_3.data.root_pos_w.clone()
-
-        # Add an upward offset so the cube sits on top of the drone
-        offset = 0.1 
-        drone_positions_defense_1[:, 2] += offset
-        drone_positions_attack_1[:, 2] += offset
-
-        drone_positions_defense_2[:, 2] += offset
-        drone_positions_attack_2[:, 2] += offset
-
-        drone_positions_defense_3[:, 2] += offset
-        drone_positions_attack_3[:, 2] += offset
-
-
-        self.drone_defense_cube_marker.visualize(drone_positions_defense_1)
-        self.drone_attack_cube_marker.visualize(drone_positions_attack_1)
-
-        self.drone_defense_cube_marker.visualize(drone_positions_defense_2)
-        self.drone_attack_cube_marker.visualize(drone_positions_attack_2)
-
-        self.drone_defense_cube_marker.visualize(drone_positions_defense_3)
-        self.drone_attack_cube_marker.visualize(drone_positions_attack_3)
+        # For each agent, update its cube marker
+        drone_positions = {
+            "drone_attack_1": self._drone_attack_1.data.root_pos_w.clone(),
+            "drone_attack_2": self._drone_attack_2.data.root_pos_w.clone(),
+            "drone_attack_3": self._drone_attack_3.data.root_pos_w.clone(),
+            "drone_defense_1": self._drone_defense_1.data.root_pos_w.clone(),
+            "drone_defense_2": self._drone_defense_2.data.root_pos_w.clone(),
+            "drone_defense_3": self._drone_defense_3.data.root_pos_w.clone(),
+        }
+        offset = 0.1  # upward offset
+        for agent, pos in drone_positions.items():
+            pos[:, 2] += offset
+            marker = getattr(self, f"{agent}_cube_marker")
+            marker.visualize(pos)
